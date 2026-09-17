@@ -16,8 +16,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.powercess.mbrain.data.*
 import com.powercess.mbrain.gateway.*
 import kotlinx.coroutines.launch
@@ -105,15 +103,17 @@ internal fun ConnectionEditor(initial: McpConnectionConfig, existing: Boolean, d
     val dirty = name != initial.name || endpoint != initial.endpoint || token != initial.token ||
         executable != initial.command.firstOrNull().orEmpty() || arguments != initial.command.drop(1) || mode != initial.mode
     val close = { if (dirty) discard = true else dismiss() }
-    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    // Use the activity window so the editor shares its system-bar and IME insets.
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         BackHandler { close() }
-        Scaffold(modifier = Modifier.fillMaxSize().imePadding(), containerColor = MaterialTheme.colorScheme.background,
+        Scaffold(modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding(),
+            contentWindowInsets = WindowInsets(0, 0, 0, 0), containerColor = MaterialTheme.colorScheme.background,
             topBar = { TopAppBar(title = { Text(if (existing) "编辑服务" else "添加服务") }, navigationIcon = {
                 IconButton(onClick = close) { Icon(Icons.Outlined.Close, "关闭编辑") }
-            }) },
+            }, windowInsets = WindowInsets(0, 0, 0, 0)) },
             bottomBar = {
                 Surface(color = MaterialTheme.colorScheme.surface) {
-                    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
                         Button(onClick = {
                             try {
                                 val next = initial.copy(name = name.trim(), endpoint = endpoint.trim(), token = token.trim(),
@@ -127,7 +127,7 @@ internal fun ConnectionEditor(initial: McpConnectionConfig, existing: Boolean, d
                     }
                 }
             }) { padding ->
-            Box(Modifier.padding(padding)) {
+            Box(Modifier.padding(padding).consumeWindowInsets(padding)) {
                 ScreenList(state = formList) {
                     item(key = "type") { Group { ActionRow(if (initial.type == ConnectionType.HTTP) "HTTP MCP" else "托管 MCP 进程",
                         if (initial.type == ConnectionType.HTTP) "连接这台设备上已有的服务" else "由 MBrain 管理进程的启动与停止",
