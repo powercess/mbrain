@@ -7,3 +7,11 @@
 - Do not bypass branch protections, force-push protected branches, or merge before required checks pass.
 - Keep `dev` as the default branch and retain it after merging into `main`.
 - Create release tags only on `main` commits and only when a release is explicitly authorized.
+
+# Commit and pull request titles
+
+- Every commit title and pull request title must use `type: description` or `type(scope): description`.
+- The scope is optional. Use a colon followed by a space, and a concise, non-empty description.
+- Titles may be written in Chinese or English.
+- Examples: `fix: 修复保存按钮遮挡`, `fix(ui): keep the save button visible`, `docs: 更新开发规范`.
+- Apply the same format to merge and squash commit titles when creating or editing them.
