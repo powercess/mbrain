@@ -1,0 +1,87 @@
+name: Android build
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  branch-policy:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Only accept dev into main
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: test "$HEAD_BRANCH" = dev && test "$HEAD_REPO" = "$BASE_REPO"
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Inspect committed source
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          python3 scripts/check-source.py
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2 # v5
+        with:
+          cache-disabled: true
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Build, unit tests and lint
+        run: ./gradlew :app:assembleDebug testDebugUnitTest :app:lintDebug --no-daemon --no-build-cache --max-workers=2 --stacktrace
+      - name: Verify supported ABIs and prepare APK
+        run: |
+          python3 scripts/check-apk.py app/build/outputs/apk/debug/app-debug.apk
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/mbrain-debug-universal-${GITHUB_SHA:0:7}.apk"
+          cd dist
+          sha256sum *.apk > SHA256SUMS.txt
+      - name: Upload universal debug APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mbrain-debug-universal-${{ github.run_number }}-${{ github.run_attempt }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Upload test and lint reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-reports-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/testDebugUnitTest/
+            app/build/reports/lint-results-debug.*
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Build summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## MBrain testing build
+          Download the universal APK from this run's **Artifacts** section.
+
+          - Android 9.0+; arm64-v8a, armeabi-v7a, x86_64 and x86 native libraries checked.
+          - SHA256SUMS.txt is included in the APK artifact.
+          - This is a debug-signed testing build, not an official release.
+          - Ephemeral CI signing keys may differ between runs; updating an existing installation may fail with a signature mismatch. Uninstalling clears app data.
+          - ABI packaging checks do not replace testing on each architecture.
+          EOF
