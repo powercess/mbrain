@@ -59,11 +59,11 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
         route == "about" -> "关于 MBrain"
         else -> "使用说明"
     }
-    BackHandler(stack.size > 1) { back() }
+    BackHandler(stack.size > 1 && editor == null) { back() }
     LaunchedEffect(status.error) { status.error?.let { snackbar.showSnackbar(it) } }
     val holder = rememberSaveableStateHolder()
     MBrainTheme(dark) {
-        Scaffold(
+        if (editor == null) Scaffold(
             snackbarHost = { SnackbarHost(snackbar) },
             topBar = { TopAppBar(title = { Text(title, maxLines = 1) }, navigationIcon = {
                 if (route != "main") IconButton(onClick = back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") }
