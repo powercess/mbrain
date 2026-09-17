@@ -48,6 +48,9 @@ jobs:
           cache-disabled: true
       - name: Install SDK
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
       - name: Install required SDK versions
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Build and test release
