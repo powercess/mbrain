@@ -19,13 +19,14 @@ Windows 首次依赖转换曾遇到 Gradle 临时目录重命名失败；使用 
 
 ### 分支与发布
 
-- `dev` 是默认分支，日常开发和外部贡献 PR 均面向 `dev`。
+- `dev` 是默认分支和开发集成分支。所有功能、修复、文档和工作流修改均从最新 `dev` 新建独立分支，再通过 PR 合并到 `dev`；不得直接在 `dev` 或 `main` 提交、推送修改。自动化代理使用 `agent/` 分支前缀。
+- `dev` 和 `main` 均要求 PR、`build` 与 `branch-policy` 检查通过且分支保持更新，禁止强推与删除；管理员同样受保护规则约束。当前不强制额外人员批准，单人维护也必须经过 PR 和 CI。
 - `main` 接收本仓库 `dev` 的 PR。合并需要通过 `build` 和 `branch-policy` 检查，不允许直接推送、强推或删除。
-- 准备发布时，在 `dev` 更新 `app/build.gradle.kts` 的 `versionName`（例如 `0.2.0`）并递增 `versionCode`，通过 PR 合并到 `main`。
-- 在合并后的 `main` 提交上创建并推送对应 tag（例如 `v0.2.0`）。`Android release` 验证提交属于 `main`、tag 与版本号一致，运行 Release 构建、测试、Lint、签名验证和 ABI 检查，然后发布 GitHub Release，附件为通用 APK 与 SHA256 校验文件。
+- 准备发布时，在功能分支更新 `app/build.gradle.kts` 的 `versionName`（首发为 `0.1.0`）并递增 `versionCode`，新增 `docs/releases/版本号.md` 发行说明，通过 PR 依次合并到 `dev`、`main`。
+- 在合并后的 `main` 提交上创建并推送对应 tag（例如 `v0.1.0`）。`Android release` 验证提交属于 `main`、tag 与版本号一致，运行 Release 构建、测试、Lint、包名和 ABI 检查。独立的签名任务验证正式证书后发布 GitHub Release，附件为通用 APK、SHA256 校验文件与证书指纹。
 - 当前只接受 `v主版本.次版本.修订版本` 的稳定版本 tag。不要移动已发布 tag。普通合并不自动创建 tag，也不自动发布。
 
-首次发布前需在 GitHub 仓库 Actions Secrets 配置：`ANDROID_KEYSTORE_BASE64`（正式 keystore 的 Base64）、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS` 和 `ANDROID_KEY_PASSWORD`。缺少任一项都会阻止发布，绝不回退到 Debug 签名。密钥须另行安全备份，不能提交到仓库。当前未生成或配置正式签名密钥。
+签名材料保存在 GitHub `release` Environment Secrets：`ANDROID_KEYSTORE_BASE64`（正式 keystore 的 Base64）、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 和 `ANDROID_SIGNING_CERT_SHA256`。环境仅允许 `v*` 标签使用；缺少任一项或证书指纹不匹配都会阻止发布，绝不回退到 Debug 签名。构建与签名使用不同 Runner，签名任务不检出或运行项目代码。私钥与恢复信息保存在仓库之外并另行备份；公开证书指纹见 [signing-certificate.txt](signing-certificate.txt)。
 
 暂存待提交文件后运行 `python scripts/check-source.py`。脚本读取 Git 暂存区的实际 blob，检查密钥、常见 Token、个人路径、私网设备地址和不应提交的产物；只打印文件位置与问题类别，不回显敏感值。它是自动检查的一层，不能替代人工审查。
 
@@ -39,7 +40,7 @@ GitHub Actions 在 push、PR 和手动触发时使用 Ubuntu 24.04、JDK 17、An
 
 通用 APK 覆盖 `arm64-v8a`、`armeabi-v7a`、`x86_64` 和 `x86`，最低 Android 9.0。CI 检查 APK 中每个原生库是否同时包含四种 ABI；当前原生库来自 AndroidX 依赖。无需按 CPU 下载不同文件。该检查验证打包完整性，不代表四种架构都已进行运行测试。设备上的外部 MCP 程序需要另行匹配设备架构。
 
-自动构建使用临时 Debug 签名，仅用于测试。不同运行的签名可能不同，不能保证直接覆盖安装，也不能覆盖正式签名版本。卸载会清除应用数据；不要为了试装直接卸载有重要配置的现有应用。正式发布签名另行配置。
+自动构建使用临时 Debug 签名和 `com.powercess.mbrain.debug` 包名，仅用于测试，可与正式版并存。不同运行的 Debug 签名可能不同，不能保证覆盖安装同名测试包。正式版固定使用 `com.powercess.mbrain` 和正式签名。早期临时版本曾使用正式包名与 Debug 签名，无法直接覆盖为正式版；卸载会清除配置，操作前需保存需要保留的连接设置。
 
 验证首次克隆时，在新目录克隆后设置标准 `JAVA_HOME`、`ANDROID_HOME` 和全新的 `GRADLE_USER_HOME`，运行 `./gradlew :app:assembleDebug testDebugUnitTest :app:lintDebug --no-build-cache --max-workers=1 --no-parallel --no-watch-fs`。Windows 使用 `gradlew.bat`。不复制旧目录的 `local.properties`、`.local-tools`、`.gradle` 或 `build`。
 

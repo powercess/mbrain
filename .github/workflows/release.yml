@@ -1,22 +1,17 @@
 name: Android release
-
 on:
   push:
     tags: ['v*']
-
 permissions:
   contents: read
-
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -31,11 +26,13 @@ jobs:
           import os, pathlib, re
           tag = os.environ['RELEASE_TAG']
           if not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag):
-              raise SystemExit('Expected a stable version tag such as v0.2.0')
+              raise SystemExit('Expected a stable version tag such as v0.1.0')
           config = pathlib.Path('app/build.gradle.kts').read_text()
           version = re.search(r'versionName\s*=\s*"([^"]+)"', config).group(1)
           if tag != 'v' + version:
               raise SystemExit('Tag must match versionName committed on main')
+          if not pathlib.Path('docs/releases/' + version + '.md').is_file():
+              raise SystemExit('Missing release notes')
           PY
           python3 -m unittest discover -s scripts -p 'test_*.py'
           python3 scripts/check-source.py
@@ -46,40 +43,95 @@ jobs:
       - uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2 # v5
         with:
           cache-disabled: true
-      - name: Install SDK
-        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         with:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
-      - name: Install required SDK versions
+      - name: Install SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Build and test release
         run: ./gradlew :app:assembleRelease testReleaseUnitTest :app:lintRelease --no-daemon --no-build-cache --max-workers=2 --stacktrace
-      - name: Sign and verify universal APK
+      - name: Verify and stage unsigned release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          apk=app/build/outputs/apk/release/app-release-unsigned.apk
+          python3 scripts/check-apk.py "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" > "$RUNNER_TEMP/badging.txt"
+          grep -F "package: name='com.powercess.mbrain'" "$RUNNER_TEMP/badging.txt"
+          grep -F "versionName='${RELEASE_TAG#v}'" "$RUNNER_TEMP/badging.txt"
+          if grep -q '^application-debuggable' "$RUNNER_TEMP/badging.txt"; then exit 1; fi
+          mkdir -p unsigned
+          cp "$apk" unsigned/app-release-unsigned.apk
+          cp "docs/releases/${RELEASE_TAG#v}.md" unsigned/RELEASE_NOTES.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unsigned-release
+          path: unsigned/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+      - name: Upload reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-reports
+          path: |
+            **/build/reports/tests/
+            app/build/reports/lint-results-release.*
+          retention-days: 14
+          if-no-files-found: ignore
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      # This job does not check out or execute project code.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: unsigned-release
+          path: unsigned
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: 'build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Sign and verify official APK
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          EXPECTED_CERT: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
         run: |
-          for required in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+          for required in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD EXPECTED_CERT; do
             if [ -z "${!required}" ]; then
-              echo "::error::Missing signing secret: $required"
+              echo "::error::Missing signing configuration: $required"
               exit 1
             fi
           done
           umask 077
-          keystore="$RUNNER_TEMP/mbrain-release.jks"
+          keystore="$RUNNER_TEMP/mbrain-release.p12"
           trap 'rm -f "$keystore"' EXIT
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore"
           mkdir -p dist
           tools="$ANDROID_HOME/build-tools/35.0.0"
-          "$tools/zipalign" -P 16 -f 4 app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
+          "$tools/zipalign" -P 16 -f 4 unsigned/app-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
           apk="dist/mbrain-${RELEASE_TAG}-universal.apk"
-          "$tools/apksigner" sign --ks "$keystore" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --out "$apk" "$RUNNER_TEMP/aligned.apk"
-          "$tools/apksigner" verify --verbose "$apk"
-          python3 scripts/check-apk.py "$apk"
+          "$tools/apksigner" sign --ks "$keystore" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --v4-signing-enabled false --out "$apk" "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" verify --verbose --print-certs "$apk" > "$RUNNER_TEMP/signature.txt"
+          actual=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/signature.txt")
+          test "$actual" = "$EXPECTED_CERT"
+          printf 'MBrain release signing certificate SHA-256: %s\n' "$actual" > dist/SIGNING_CERTIFICATE.txt
+          "$tools/zipalign" -c -P 16 4 "$apk"
           cd dist
           sha256sum *.apk > SHA256SUMS.txt
       - name: Publish GitHub release
@@ -88,5 +140,11 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_TAG" dist/*.apk dist/SHA256SUMS.txt --verify-tag --title "MBrain $RELEASE_TAG" --generate-notes --draft
-          gh release edit "$RELEASE_TAG" --draft=false
+          if gh release view "$RELEASE_TAG" --json isDraft > "$RUNNER_TEMP/existing-release.json" 2>/dev/null; then
+            test "$(jq -r .isDraft "$RUNNER_TEMP/existing-release.json")" = true
+            gh release upload "$RELEASE_TAG" dist/*.apk dist/SHA256SUMS.txt dist/SIGNING_CERTIFICATE.txt --clobber
+            gh release edit "$RELEASE_TAG" --notes-file unsigned/RELEASE_NOTES.md
+          else
+            gh release create "$RELEASE_TAG" dist/*.apk dist/SHA256SUMS.txt dist/SIGNING_CERTIFICATE.txt --verify-tag --title "MBrain $RELEASE_TAG" --notes-file unsigned/RELEASE_NOTES.md --draft
+          fi
+          gh release edit "$RELEASE_TAG" --draft=false --latest
