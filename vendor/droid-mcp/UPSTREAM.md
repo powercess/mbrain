@@ -1,5 +1,7 @@
 # droid-mcp source provenance
 
+MBrain remote-access changes: HTTP transport optionally falls back to an OS-assigned port on bind conflict and exposes the resolved port. The host may replace its primary token after encrypted persistence. Defaults retain fixed-port behavior unless fallback is explicitly requested.
+
 - Repository: https://github.com/stixez/droid-mcp
 - Revision: `aeaa5b9e8e96f56ef64a7ca23d0726585f7b1103`
 - Imported: 2026-09-17

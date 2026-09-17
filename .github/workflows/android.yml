@@ -60,7 +60,12 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - name: Install required SDK versions
         if: steps.scope.outputs.android == 'true'
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358"
+      - if: steps.scope.outputs.android == 'true'
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.3'
+          cache: false
       - name: Build, unit tests and lint
         if: steps.scope.outputs.android == 'true'
         run: ./gradlew :app:assembleDebug :app:assembleRelease testDebugUnitTest :app:lintDebug :app:lintRelease --no-daemon --no-build-cache --max-workers=2 --stacktrace

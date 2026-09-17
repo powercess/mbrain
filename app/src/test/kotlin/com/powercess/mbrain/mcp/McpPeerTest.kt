@@ -40,7 +40,7 @@ class McpPeerTest {
 
     @Test fun `HTTP configuration rejects external and self endpoints`() {
         listOf("http://example.com/mcp", "http://127.0.0.1:8765/mcp", "file:///tmp/a", "http://user@localhost:8787/mcp").forEach {
-            assertThrows(IllegalArgumentException::class.java) { McpConnectionConfig(name = "Test server", endpoint = it).validate() }
+            assertThrows(IllegalArgumentException::class.java) { McpConnectionConfig(name = "Test server", endpoint = it).validate(8765) }
         }
         McpConnectionConfig(name = "Test server", endpoint = "http://localhost:9000/mcp").validate()
         assertThrows(IllegalArgumentException::class.java) { McpConnectionConfig().validate() }
