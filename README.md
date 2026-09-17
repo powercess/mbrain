@@ -11,7 +11,7 @@
 <p>
   <img src="https://img.shields.io/badge/Android-9.0%2B-3DDC84?style=flat-square&amp;logo=android&amp;logoColor=white" alt="Android 9.0 及以上" />
   <img src="https://img.shields.io/badge/MCP-HTTP-5E6AD2?style=flat-square" alt="HTTP MCP" />
-  <img src="https://img.shields.io/badge/status-preview-14756A?style=flat-square" alt="开发预览阶段" />
+  <a href="https://github.com/powercess/mbrain/releases/latest"><img src="https://img.shields.io/github/v/release/powercess/mbrain?style=flat-square&amp;color=14756A" alt="最新版本" /></a>
 </p>
 
 [快速上手](#快速上手) · [连接 Agent](#连接-agent) · [接入 MCP 服务](#接入-mcp-服务) · [常见问题](#常见问题) · [反馈问题](https://github.com/powercess/mbrain/issues)
@@ -59,9 +59,9 @@ MBrain 是运行在 Android 上的 MCP 网关。它把手机自身的能力和�
 
 需要 **Android 9.0 或更高版本**。
 
-当前处于开发预览阶段（`0.2.0-dev`），首个正式发行包仍在准备中。仓库公开并完成自动构建后，可从 [Actions](https://github.com/powercess/mbrain/actions/workflows/android.yml) 的成功运行中下载 `mbrain-debug-universal-…` 产物，解压安装 APK。通用安装包覆盖 ARM64、ARM32、x86_64 和 x86，无需挑选架构。
+从 [GitHub Releases](https://github.com/powercess/mbrain/releases/latest) 下载最新版本的 `mbrain-v版本号-universal.apk`，在 Android 设备上打开并安装。通用安装包覆盖 ARM64、ARM32、x86_64 和 x86，无需挑选架构。
 
-自动构建为测试版，不同构建之间可能因 Debug 签名不同而无法覆盖安装，卸载会清除数据。正式发行后可从 [GitHub Releases](https://github.com/powercess/mbrain/releases) 下载；自行构建与校验说明见[开发指南](docs/development.md)。
+发行页面提供更新说明和 `SHA256SUMS.txt` 校验文件。自行构建及开发测试版说明见[开发指南](docs/development.md)。
 
 ### 2. 选择需要开放的能力
 
@@ -155,7 +155,7 @@ HTTP 服务目前只支持回环地址。托管进程所需的程序和运行环
 
 ## 反馈与参与
 
-遇到问题或有功能建议，欢迎提交 [Issue](https://github.com/powercess/mbrain/issues)。请附上 Android 版本、MBrain 版本、复现步骤和相关截图，并隐去 Token 与私人信息。
+遇到问题或有功能建议，欢迎通过 [Issue 模板](https://github.com/powercess/mbrain/issues/new/choose)反馈。描述问题时请附上版本和复现步骤；截图或日志中请隐去 Token 与私人信息。
 
 欢迎通过 Pull Request 改进项目，请以默认分支 `dev` 为目标。`main` 用于接收发布合并，版本 tag 触发正式发布。构建与测试说明见[开发指南](docs/development.md)。
 
@@ -175,4 +175,4 @@ HTTP 服务目前只支持回环地址。托管进程所需的程序和运行环
   <img alt="MBrain 的 GitHub Star 增长趋势" src="https://api.star-history.com/svg?repos=powercess/mbrain&amp;type=Date" />
 </picture>
 
-<sub>仓库公开后，由 <a href="https://www.star-history.com/#powercess/mbrain&amp;Date">Star History</a> 展示真实的 Star 趋势。</sub>
+<sub>Star 趋势由 <a href="https://www.star-history.com/#powercess/mbrain&amp;Date">Star History</a> 提供。</sub>
