@@ -14,7 +14,7 @@ class McpPeer(val id: String, private val connection: RpcConnection) : Closeable
         val init = request("initialize", buildJsonObject {
             put("protocolVersion", "2025-03-26")
             put("capabilities", buildJsonObject {})
-            putJsonObject("clientInfo") { put("name", "MBrain"); put("version", "0.2.0") }
+            putJsonObject("clientInfo") { put("name", "MBrain"); put("version", com.powercess.mbrain.BuildConfig.VERSION_NAME) }
         })
         require(init["protocolVersion"] != null && init["capabilities"]?.jsonObject?.containsKey("tools") == true) {
             "上游没有声明 MCP tools 能力"

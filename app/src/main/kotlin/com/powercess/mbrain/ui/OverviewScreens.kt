@@ -182,7 +182,7 @@ internal fun AboutScreen() {
                 }
                 Text("MBrain", style = MaterialTheme.typography.titleLarge)
                 Text("手机能力，统一连接", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("0.2.0-dev", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(com.powercess.mbrain.BuildConfig.VERSION_NAME, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         item { Group {

@@ -11,10 +11,16 @@ android {
         applicationId = "com.powercess.mbrain"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 2
-        versionName = "0.2.0-dev"
+        versionCode = 3
+        versionName = "0.1.0"
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
+    buildTypes {
+        getByName("debug") {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
