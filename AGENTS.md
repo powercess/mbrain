@@ -8,6 +8,13 @@
 - Keep `dev` as the default branch and retain it after merging into `main`.
 - Create release tags only on `main` commits and only when a release is explicitly authorized.
 
+# Validation scope
+
+- Choose local checks according to the changed behavior; do not run a full Android build for every PR by default.
+- Documentation and repository-instruction changes need lightweight checks only. Workflow changes need workflow validation and tests of any changed CI logic.
+- Run relevant builds, tests and lint for application, dependency and build-configuration changes. Repeat checks only after relevant changes or failures.
+- CI keeps required checks reporting on every PR, but skips Android setup and builds for documentation-only PRs. Pushes to `dev`/`main`, manual runs and releases retain full validation.
+
 # Commit and pull request titles
 
 - Every commit title and pull request title must use `type: description` or `type(scope): description`.
