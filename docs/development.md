@@ -1,10 +1,21 @@
 # MBrain 开发与联调
 
+## 远程访问集成验证（2026-09-17）
+
+- Debug / Release APK 构建和 lint 通过（无错误，37 条警告）；两个 APK 均通过四 ABI 库完整性检查。
+- 应用与核心传输共 77 项 JVM 测试通过；仓库脚本 14 项测试、工作流 actionlint 通过。
+- Android API 35、x86_64 测试设备：实际运行 APK 内置 frpc，使用 ADB 反向转发连接仅监听电脑回环地址的 frps；两条隧道分别通过未认证拒绝、初始化、工具目录和只读电池查询。
+- 主动占用手机 8765 后，网关自动绑定空闲端口，两条隧道均跟随实际端口；关闭一条隧道不影响另一条。进程强制停止后映射关闭，重新启动后加密配置和 MCP Token 保留。
+- UI：深浅色、空字段校验、保存、等待网关、独立开关、编辑放弃/继续、删除取消/确认、凭据重置通过；重置后旧 Token 返回 401，新 Token 正常调用。
+- 限制：尚未验证公网域名/HTTPS 反向代理、ARM 真机、长期后台运行和多 OEM 电池策略。本次测试不代表公网部署已经完成。
+
 ## 工程环境
 
 Android Studio 打开仓库根目录，运行 `app`。当前配置为 Kotlin 2.1.20、AGP 8.13.2、Gradle 8.13、compile/target SDK 35、min SDK 28。
 使用标准 JDK 17，并将 `JAVA_HOME` 指向 JDK 安装目录；CI 使用 Temurin 17，不依赖特定厂商的自动下载配置。
 安装 Android SDK Platform 35 和 Build Tools 35.0.0。SDK 路径通过 `ANDROID_HOME` 或本机 `local.properties` 指定，不提交。设备上的 root、Shizuku、MT 服务无需运行在开发电脑上。
+
+内置 frpc 构建还需要 Python 3.9+、Go 1.26.3 和 Android NDK 28.2.13676358。Gradle 自动构建四种 ABI；`MBRAIN_PYTHON` 可指定 Python 路径。来源、构建和使用说明见[远程访问](remote-access.md)。
 
 ```powershell
 .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest :droid-mcp-core:testDebugUnitTest :droid-mcp-shell-core:testDebugUnitTest :droid-mcp-root:testDebugUnitTest :app:lintDebug
@@ -75,7 +86,7 @@ KernelSU 等管理器可能对未授权应用隐藏 `su`，需在管理器中单
 ## HTTP MCP（例如 MT）
 
 MT 仅作为普通 HTTP MCP 服务的联调示例，应用没有 MT 专属入口或默认配置。在 MT 中开启 MCP 后，手动添加 HTTP 服务。此前联调地址为 `http://127.0.0.1:8787/mcp`，实际地址和 Token 以该服务的配置为准。
-只接受 localhost / 127.0.0.1 / ::1，不跟随 HTTP 重定向，不允许连接 MBrain 自身的 8765 端口。
+只接受 localhost / 127.0.0.1 / ::1，不跟随 HTTP 重定向，不允许连接 MBrain 当前实际监听端口。
 支持初始化、工具列表分页、会话头、JSON 与 SSE POST 响应，以及工具调用。
 完整 inputSchema/outputSchema、显式 null 参数、content、structuredContent、isError 均保留；MT 自身权限错误不会被吞掉。
 上游请求失败不自动重试写操作。服务重启或会话失效后点击“断开/连接”重新初始化；工具变更也通过重新连接刷新。
@@ -116,7 +127,7 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke-mcp.ps1
 ```
 
 按提示输入 Token。脚本验证未认证请求被拒绝、初始化、核心工具列表、电池查询。
-多个设备时使用 `adb -s <serial>`。Token 在每次重启网关后改变，旧 Token 失效。
+多个设备时使用 `adb -s <serial>`。端口冲突时以应用显示的实际端口为准。Token 加密持久保存，重置后旧 Token 失效。
 
 ## 代码结构
 

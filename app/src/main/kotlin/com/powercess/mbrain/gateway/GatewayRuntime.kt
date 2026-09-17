@@ -4,6 +4,8 @@ import android.content.Context
 import com.powercess.mbrain.data.*
 import com.powercess.mbrain.mcp.*
 import com.powercess.mbrain.shell.*
+import com.powercess.mbrain.remote.*
+import java.io.File
 import io.droidmcp.apps.AppsTools
 import io.droidmcp.core.*
 import io.droidmcp.device.DeviceTools
@@ -23,18 +25,27 @@ data class ToolInfo(val name: String, val description: String, val source: Strin
 data class ConnectionStatus(val state: String = "未连接", val count: Int = 0, val error: String? = null)
 data class GatewayStatus(
     val running: Boolean = false, val token: String? = null,
+    val port: Int? = null,
+    val tunnels: Map<String, TunnelStatus> = emptyMap(),
     val tools: List<ToolInfo> = emptyList(), val error: String? = null,
     val rootReady: Boolean = false, val shizukuReady: Boolean = false,
     val rootActivation: ActivationState = ActivationState(), val shizukuActivation: ActivationState = ActivationState(),
     val connections: Map<String, ConnectionStatus> = emptyMap(),
     val events: List<String> = emptyList(),
-)
+) {
+    val endpoint: String? get() = port?.let { "http://127.0.0.1:$it/mcp" }
+}
 
 object GatewayRuntime {
     const val PORT = 8765
-    const val ENDPOINT = "http://127.0.0.1:8765/mcp"
     private lateinit var context: Context
     private lateinit var store: ConfigStore
+    private lateinit var secrets: SecretStore
+    private lateinit var tunnelStore: TunnelStore
+    private var tunnelLoadFailed = false
+    private var frpc: FrpcController? = null
+    private val mutableTunnels = MutableStateFlow<List<TunnelConfig>>(emptyList())
+    val tunnels = mutableTunnels.asStateFlow()
     private val mutableConfig = MutableStateFlow(GatewayConfig())
     val config = mutableConfig.asStateFlow()
     private val mutableStatus = MutableStateFlow(GatewayStatus())
@@ -98,6 +109,12 @@ object GatewayRuntime {
             context = appContext.applicationContext
             store = ConfigStore(context)
             mutableConfig.value = store.load()
+            secrets = SecretStore(context)
+            tunnelStore = TunnelStore(secrets)
+            try { mutableTunnels.value = tunnelStore.load() } catch (_: Exception) {
+                tunnelLoadFailed = true
+                failed(IllegalStateException("远程配置无法解密，请恢复设备凭据后重试"))
+            }
             Shizuku.addBinderReceivedListenerSticky(binderReceived)
             Shizuku.addBinderDeadListener(binderDead)
             Shizuku.addRequestPermissionResultListener(permissionResult)
@@ -172,10 +189,49 @@ object GatewayRuntime {
         }
     }
     fun saveConnection(connection: McpConnectionConfig) {
-        connection.validate()
+        connection.validate(status.value.port)
         updateConfig { it.copy(connections = it.connections.filterNot { c -> c.id == connection.id } + connection) }
     }
     fun removeConnection(id: String) = updateConfig { it.copy(connections = it.connections.filterNot { c -> c.id == id }) }
+
+    fun saveTunnel(tunnel: TunnelConfig) {
+        check(!tunnelLoadFailed) { "远程配置无法读取，未覆盖原配置" }
+        tunnel.validate(tunnels.value)
+        val next = if (tunnels.value.any { it.id == tunnel.id }) tunnels.value.map { if (it.id == tunnel.id) tunnel else it } else tunnels.value + tunnel
+        tunnelStore.save(next)
+        mutableTunnels.value = next
+        reconcileTunnels()
+    }
+    fun enableTunnel(id: String, enabled: Boolean) {
+        try { tunnels.value.find { it.id == id }?.let { saveTunnel(it.copy(enabled = enabled)) } }
+        catch (_: Exception) { failed(IllegalStateException("隧道配置保存失败")) }
+    }
+    fun removeTunnel(id: String) {
+        try {
+            val next = tunnels.value.filterNot { it.id == id }
+            tunnelStore.save(next)
+            mutableTunnels.value = next
+            reconcileTunnels()
+            mutableStatus.update { it.copy(tunnels = it.tunnels - id) }
+        } catch (_: Exception) { failed(IllegalStateException("隧道移除失败")) }
+    }
+    fun retryTunnel(id: String) { frpc?.retry(id); reconcileTunnels() }
+    private fun reconcileTunnels() {
+        frpc?.reconcile(tunnels.value, status.value.port.takeIf { status.value.running })
+        if (frpc == null) mutableStatus.update { current -> current.copy(tunnels = tunnels.value.associate {
+            it.id to TunnelStatus(if (it.enabled) TunnelPhase.WAITING else TunnelPhase.OFF)
+        }) }
+    }
+    fun rotateAccessToken() {
+        try {
+            // Persist first so a storage failure does not silently invalidate clients.
+            val next = SecretStore.newToken()
+            secrets.write("gateway_token", next)
+            server?.setServerToken(next)
+            mutableStatus.update { it.copy(token = next.takeIf { _ -> it.running }) }
+            event("访问凭据已重置")
+        } catch (_: Exception) { failed(IllegalStateException("访问凭据重置失败")) }
+    }
 
     fun createServer(appContext: Context): DroidMcp {
         initialize(appContext)
@@ -187,7 +243,8 @@ object GatewayRuntime {
                     event("${event.toolName} · ${if (event.success) "成功" else "失败"} · ${event.durationMs}ms")
                 }
             })
-            .enableHttpServer(port = PORT, host = "127.0.0.1", requireAuth = true, readOnly = false).build()
+            .enableHttpServer(port = PORT, host = "127.0.0.1", token = secrets.gatewayToken(), requireAuth = true,
+                readOnly = false, fallbackToDynamicPort = true).build()
     }
     private fun localTools(): List<McpTool> = buildList {
         addAll(DeviceTools.all(context))
@@ -220,7 +277,15 @@ object GatewayRuntime {
     }
     fun started(instance: DroidMcp) {
         server = instance
-        mutableStatus.update { it.copy(running = true, token = instance.serverToken, error = null) }
+        val port = checkNotNull(instance.serverPort)
+        mutableStatus.update { it.copy(running = true, token = instance.serverToken, port = port, error = null) }
+        val directory = File(context.noBackupFilesDir, "frpc")
+        directory.mkdirs()
+        directory.listFiles()?.filter { it.name.startsWith("frpc-") && it.extension == "json" }?.forEach { it.delete() }
+        frpc = FrpcController(File(context.applicationInfo.nativeLibraryDir, "libfrpc.so"), directory, changed = { id, state ->
+            mutableStatus.update { it.copy(tunnels = it.tunnels + (id to state)) }
+        })
+        reconcileTunnels()
         refreshTools()
         event("本机 MCP 服务已启动")
         config.value.connections.filter { it.enabled }.forEach { connect(it.id) }
@@ -236,7 +301,7 @@ object GatewayRuntime {
                 connectionState(id, ConnectionStatus("连接中"))
                 var peer: McpPeer? = null
                 try {
-                    item.validate()
+                    item.validate(status.value.port)
                     val rpc = when (item.type) {
                         ConnectionType.HTTP -> HttpRpcConnection(item)
                         ConnectionType.STDIO -> {
@@ -274,6 +339,7 @@ object GatewayRuntime {
     fun event(message: String) { mutableStatus.update { it.copy(events = (listOf(message) + it.events).take(40)) } }
     fun failed(error: Exception) { mutableStatus.update { it.copy(error = error.message ?: "操作失败") } }
     fun shutdown() {
+        frpc?.close(); frpc = null
         scope?.cancel(); scope = null
         peers.values.forEach { it.peer.close() }; peers.clear()
         processes.close()
@@ -281,7 +347,8 @@ object GatewayRuntime {
     }
     fun stopped() {
         shutdown()
-        mutableStatus.update { it.copy(running = false, token = null, tools = emptyList(), connections = emptyMap()) }
+        mutableStatus.update { it.copy(running = false, token = null, port = null, tools = emptyList(), connections = emptyMap()) }
+        reconcileTunnels()
         event("网关及托管子进程已停止")
     }
 }

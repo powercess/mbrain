@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.powercess.mbrain.data.*
 import com.powercess.mbrain.gateway.*
+import com.powercess.mbrain.remote.*
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -26,6 +27,7 @@ import kotlinx.coroutines.launch
 fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
     val status by GatewayRuntime.status.collectAsState()
     val config by GatewayRuntime.config.collectAsState()
+    val tunnels by GatewayRuntime.tunnels.collectAsState()
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("appearance", Context.MODE_PRIVATE) }
     var appearance by rememberSaveable { mutableStateOf(prefs.getString("theme", "system") ?: "system") }
@@ -39,6 +41,8 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
     var adding by rememberSaveable { mutableStateOf(false) }
     var themePicker by rememberSaveable { mutableStateOf(false) }
     var removal by rememberSaveable { mutableStateOf<String?>(null) }
+    var tunnelEditor by rememberSaveable { mutableStateOf<String?>(null) }
+    var tunnelRemoval by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val notify: (String) -> Unit = { scope.launch { snackbar.showSnackbar(it) } }
@@ -55,15 +59,18 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
         route.startsWith("tools:") -> "工具目录"
         route.startsWith("tool:") -> "工具详情"
         route == "credentials" -> "连接到 MBrain"
+        route == "remote" -> "远程访问"
+        route.startsWith("tunnel:") -> tunnels.find { it.id == route.substringAfter(':') }?.name ?: "隧道详情"
+        route.startsWith("tunnel-log:") -> "连接记录"
         route == "activity" -> "运行记录"
         route == "about" -> "关于 MBrain"
         else -> "使用说明"
     }
-    BackHandler(stack.size > 1 && editor == null) { back() }
+    BackHandler(stack.size > 1 && editor == null && tunnelEditor == null) { back() }
     LaunchedEffect(status.error) { status.error?.let { snackbar.showSnackbar(it) } }
     val holder = rememberSaveableStateHolder()
     MBrainTheme(dark) {
-        if (editor == null) Scaffold(
+        if (editor == null && tunnelEditor == null) Scaffold(
             snackbarHost = { SnackbarHost(snackbar) },
             topBar = { TopAppBar(title = { Text(title, maxLines = 1) }, navigationIcon = {
                 if (route != "main") IconButton(onClick = back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") }
@@ -88,16 +95,19 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
                             key == "tab:0" -> HomeScreen(status, config, start, stop, open, { tab = it })
                             key == "tab:1" -> CapabilitiesScreen(status, config, open)
                             key == "tab:2" -> ConnectionsScreen(status, config, open, { adding = true }, { tab = 0 })
-                            key == "tab:3" -> SettingsScreen(appearance, open, { themePicker = true })
+                            key == "tab:3" -> SettingsScreen(appearance, open, { themePicker = true }, tunnels.size, status.tunnels.values.count { it.phase == TunnelPhase.CONNECTED })
                             key.startsWith("cap:") -> CapabilityScreen(key.substringAfter(':'), status, config, open, notify)
                             key.startsWith("tools:") -> ToolsScreen(status, key.substringAfter(':'), open)
                             key.startsWith("tool:") -> ToolScreen(status.tools.find { it.name == key.substringAfter(':') }, copy)
                             key.startsWith("connection:") -> ConnectionScreen(config.connections.find { it.id == key.substringAfter(':') }, status,
                                 open, { editor = it }, { removal = it })
-                            key == "credentials" -> CredentialsScreen(status, copy)
+                            key == "credentials" -> CredentialsScreen(status, copy, tunnels, open)
+                            key == "remote" -> RemoteScreen(tunnels, status, open, { tunnelEditor = "new" })
+                            key.startsWith("tunnel:") -> TunnelScreen(tunnels.find { it.id == key.substringAfter(':') }, status, open, { tunnelEditor = it }, { tunnelRemoval = it }, copy)
+                            key.startsWith("tunnel-log:") -> TunnelLogScreen(status.tunnels[key.substringAfter(':')])
                             key == "activity" -> ActivityScreen(status)
                             key == "about" -> AboutScreen()
-                            key == "help" -> HelpScreen(copy)
+                            key == "help" -> HelpScreen(status, copy)
                         }
                     }
                 }
@@ -131,6 +141,23 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
             }
         }
 
+        tunnelEditor?.let { editorKey ->
+            val initial = remember(editorKey) { if (editorKey == "new") TunnelConfig() else tunnels.find { it.id == editorKey } }
+            if (initial != null) key(editorKey) {
+                TunnelEditor(initial, editorKey != "new", tunnels, { tunnelEditor = null }) { next ->
+                    GatewayRuntime.saveTunnel(next)
+                    tunnelEditor = null
+                    if (editorKey == "new") open("tunnel:${next.id}")
+                    notify("已保存隧道")
+                }
+            }
+        }
+        tunnelRemoval?.let { id ->
+            AlertDialog(onDismissRequest = { tunnelRemoval = null }, title = { Text("删除这个隧道？") },
+                text = { Text("连接将断开，配置将删除。") },
+                confirmButton = { TextButton(onClick = { GatewayRuntime.removeTunnel(id); tunnelRemoval = null; back() }) { Text("删除", color = MaterialTheme.colorScheme.error) } },
+                dismissButton = { TextButton(onClick = { tunnelRemoval = null }) { Text("取消") } })
+        }
         if (themePicker) ModalBottomSheet(onDismissRequest = { themePicker = false }) {
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
                 Text("外观", style = MaterialTheme.typography.headlineSmall)

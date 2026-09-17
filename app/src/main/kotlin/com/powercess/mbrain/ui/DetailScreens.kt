@@ -66,15 +66,21 @@ internal fun ToolScreen(tool: ToolInfo?, copy: (String, String) -> Unit) {
 }
 
 @Composable
-internal fun CredentialsScreen(status: GatewayStatus, copy: (String, String) -> Unit) {
+internal fun CredentialsScreen(status: GatewayStatus, copy: (String, String) -> Unit,
+    tunnels: List<com.powercess.mbrain.remote.TunnelConfig>, open: (String) -> Unit) {
     var reveal by rememberSaveable { mutableStateOf(false) }
+    var reset by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(status.token) { reveal = false }
     ScreenList {
         item { SectionLabel("连接地址") }
-        item { Group { ActionRow("本机 MCP", GatewayRuntime.ENDPOINT, Icons.Outlined.Link,
-            { copy("连接地址", GatewayRuntime.ENDPOINT) }, trailing = { Icon(Icons.Outlined.ContentCopy, null) }) } }
+        item { Group { ActionRow("本机 MCP", status.endpoint ?: "启动网关后获取", Icons.Outlined.Link,
+            status.endpoint?.let { { copy("连接地址", it) } }, trailing = { if (status.endpoint != null) Icon(Icons.Outlined.ContentCopy, null) }) } }
+        tunnels.filter { it.publicUrl.isNotBlank() }.forEach { tunnel ->
+            item(key = tunnel.id) { Group { ActionRow(tunnel.name, tunnel.publicUrl, Icons.Outlined.Public,
+                { open("tunnel:${tunnel.id}") }) } }
+        }
         item { SectionLabel("访问凭据") }
-        if (status.token == null) item { EmptyState(Icons.Outlined.Key, "启动后生成 Token", "每次重启网关，都会生成新的访问凭据。") }
+        if (status.token == null) item { EmptyState(Icons.Outlined.Key, "启动后查看 Token", "访问凭据会保留，重置后旧凭据失效。") }
         else {
             item { Group(card = true) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -87,6 +93,11 @@ internal fun CredentialsScreen(status: GatewayStatus, copy: (String, String) -> 
                 }
             } }
             item { Note("将 Token 填入客户端的 Bearer 认证。持有凭据的客户端可以调用已启用的全部工具。") }
+            item { TextButton(onClick = { reset = true }, modifier = Modifier.fillMaxWidth()) { Text("重置访问凭据", color = MaterialTheme.colorScheme.error) } }
         }
     }
+    if (reset) AlertDialog(onDismissRequest = { reset = false }, title = { Text("重置访问凭据？") },
+        text = { Text("所有客户端需要更新 Token。") },
+        confirmButton = { TextButton(onClick = { GatewayRuntime.rotateAccessToken(); reset = false }) { Text("重置") } },
+        dismissButton = { TextButton(onClick = { reset = false }) { Text("取消") } })
 }

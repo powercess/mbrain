@@ -22,6 +22,8 @@ import io.ktor.server.sse.*
 import kotlinx.coroutines.flow.MutableSharedFlow
 import java.util.Collections
 import java.util.UUID
+import java.net.BindException
+import kotlinx.coroutines.runBlocking
 
 /**
  * Ktor/Netty MCP server for desktop clients. Exposes the JSON-RPC surface at `POST /mcp`
@@ -52,6 +54,7 @@ class HttpTransport(
     auditSink: AuditSink? = null,
     private val tls: TlsConfig? = null,
     private val host: String = "127.0.0.1",
+    private val fallbackToDynamicPort: Boolean = false,
 ) {
     /**
      * Bearer-token authority. `null` when [requireAuth] is false (open server).
@@ -72,7 +75,9 @@ class HttpTransport(
     val tlsFingerprint: String? get() = tls?.certFingerprintSha256
 
     /** Port the server actually binds — the HTTPS port when TLS is on. */
-    private val activePort: Int get() = tls?.httpsPort ?: port
+    private val activePort: Int get() = boundPort ?: tls?.httpsPort ?: port
+    @Volatile var boundPort: Int? = null
+        private set
 
     /** mDNS service name advertised on the network, derived from the device model (sanitised, ≤63 chars). */
     val mdnsServiceName: String = run {
@@ -95,15 +100,25 @@ class HttpTransport(
     /** Start the embedded server and register mDNS. No-op if already running; rethrows bind failures. */
     fun start() {
         if (server != null) return
-        val tlsConfig = tls
         try {
-            server = embeddedServer(
+            bind(port)
+        } catch (e: Exception) {
+            if (!fallbackToDynamicPort || tls != null || generateSequence<Throwable>(e) { it.cause }.none { it is BindException }) throw e
+            bind(0)
+        }
+    }
+
+    private fun bind(listenPort: Int) {
+        val tlsConfig = tls
+        var candidate: EmbeddedServer<*, *>? = null
+        try {
+            candidate = embeddedServer(
                 factory = Netty,
                 configure = {
                     if (tlsConfig == null) {
                         connector {
                             host = this@HttpTransport.host
-                            port = this@HttpTransport.port
+                            port = listenPort
                         }
                     } else {
                         sslConnector(
@@ -118,10 +133,15 @@ class HttpTransport(
                     }
                 },
                 module = { installMcpModule() },
-            ).start(wait = false)
+            )
+            candidate.start(wait = false)
+            boundPort = runBlocking { candidate.engine.resolvedConnectors().first().port }
+            server = candidate
             registerNsd()
         } catch (e: Exception) {
+            runCatching { candidate?.stop(0, 1000) }
             server = null
+            boundPort = null
             throw e
         }
     }
@@ -201,6 +221,7 @@ class HttpTransport(
         unregisterNsd()
         server?.stop(1000, 2000)
         server = null
+        boundPort = null
     }
 
     /** Whether the embedded server is currently running. */
@@ -212,6 +233,7 @@ class HttpTransport(
      * Surface the new value in a fresh pairing QR.
      */
     fun rotateToken(): String? = tokenStore?.rotatePrimary()
+    fun setToken(token: String) { tokenStore?.replacePrimary(token) }
 
     /**
      * Mint a revocable token for a named client. Re-pairing an existing label

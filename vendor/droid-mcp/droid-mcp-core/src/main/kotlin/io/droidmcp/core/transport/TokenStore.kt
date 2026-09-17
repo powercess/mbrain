@@ -64,6 +64,11 @@ class TokenStore(seedPrimary: String? = null) {
         return next
     }
 
+    fun replacePrimary(token: String) {
+        require(token.length >= 32 && token.none { it.isWhitespace() })
+        primary = token
+    }
+
     /**
      * Mint a token for a named client. Re-pairing an existing label replaces its
      * token (and invalidates the previous one). Returns the new token.
