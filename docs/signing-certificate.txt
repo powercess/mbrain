@@ -1,0 +1,3 @@
+MBrain official release signing certificate
+Application ID: com.powercess.mbrain
+Certificate SHA-256: eaee316505bb2f6bbfc99ee840570ca96ece4592cbda6804924d274e61f1ce8c
