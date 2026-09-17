@@ -14,3 +14,11 @@
 - Documentation and repository-instruction changes need lightweight checks only. Workflow changes need workflow validation and tests of any changed CI logic.
 - Run relevant builds, tests and lint for application, dependency and build-configuration changes. Repeat checks only after relevant changes or failures.
 - CI keeps required checks reporting on every PR, but skips Android setup and builds for documentation-only PRs. Pushes to `dev`/`main`, manual runs and releases retain full validation.
+
+# Commit and pull request titles
+
+- Every commit title and pull request title must use `type: description` or `type(scope): description`.
+- The scope is optional. Use a colon followed by a space, and a concise, non-empty description.
+- Titles may be written in Chinese or English.
+- Examples: `fix: 修复保存按钮遮挡`, `fix(ui): keep the save button visible`, `docs: 更新开发规范`.
+- Apply the same format to merge and squash commit titles when creating or editing them.
