@@ -157,7 +157,7 @@ HTTP 服务目前只支持回环地址。托管进程所需的程序和运行环
 
 遇到问题或有功能建议，欢迎提交 [Issue](https://github.com/powercess/mbrain/issues)。请附上 Android 版本、MBrain 版本、复现步骤和相关截图，并隐去 Token 与私人信息。
 
-欢迎通过 Pull Request 改进项目，请以默认分支 `dev` 为目标。`main` 用于接收发布合并，版本 tag 触发正式发布。构建与测试说明见[开发指南](docs/development.md)。
+欢迎通过 Pull Request 改进项目。请从默认分支 `dev` 创建功能分支，再提交 PR 到 `dev`；`dev` 和 `main` 均不接受直接推送。发布时由 `dev` 提交 PR 到 `main`，版本 tag 触发正式发布。构建与测试说明见[开发指南](docs/development.md)。
 
 ## 致谢
 

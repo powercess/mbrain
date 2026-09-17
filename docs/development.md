@@ -19,7 +19,8 @@ Windows 首次依赖转换曾遇到 Gradle 临时目录重命名失败；使用 
 
 ### 分支与发布
 
-- `dev` 是默认分支，日常开发和外部贡献 PR 均面向 `dev`。
+- `dev` 是默认分支和开发集成分支。所有功能、修复、文档和工作流修改均从最新 `dev` 新建独立分支，再通过 PR 合并到 `dev`；不得直接在 `dev` 或 `main` 提交、推送修改。自动化代理使用 `agent/` 分支前缀。
+- `dev` 和 `main` 均要求 PR、`build` 与 `branch-policy` 检查通过且分支保持更新，禁止强推与删除；管理员同样受保护规则约束。当前不强制额外人员批准，单人维护也必须经过 PR 和 CI。
 - `main` 接收本仓库 `dev` 的 PR。合并需要通过 `build` 和 `branch-policy` 检查，不允许直接推送、强推或删除。
 - 准备发布时，在 `dev` 更新 `app/build.gradle.kts` 的 `versionName`（例如 `0.2.0`）并递增 `versionCode`，通过 PR 合并到 `main`。
 - 在合并后的 `main` 提交上创建并推送对应 tag（例如 `v0.2.0`）。`Android release` 验证提交属于 `main`、tag 与版本号一致，运行 Release 构建、测试、Lint、签名验证和 ABI 检查，然后发布 GitHub Release，附件为通用 APK 与 SHA256 校验文件。
