@@ -18,5 +18,9 @@
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="User-started local MCP gateway for Android device tools" />
         </service>
+        <service android:name=".remote.TunnelService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-started frpc tunnels exposing selected local services" />
+        </service>
     </application>
 </manifest>
