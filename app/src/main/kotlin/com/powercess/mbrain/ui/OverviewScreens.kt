@@ -144,6 +144,8 @@ internal fun SettingsScreen(appearance: String, open: (String) -> Unit, theme: (
         item { Group {
             ActionRow("地址与凭据", "供 Agent 连接本机网关", Icons.Outlined.Key, { open("credentials") })
             GroupDivider()
+            ActionRow("内网穿透", "多隧道、HTTPS 与证书", Icons.Outlined.Public, { open("remote") })
+            GroupDivider()
             ActionRow("使用说明", "电脑连接、运行方式与限制", Icons.Outlined.HelpOutline, { open("help") })
         } }
         item { SectionLabel("偏好") }

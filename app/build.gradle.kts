@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 android {
+    ndkVersion = "28.2.13676358"
     namespace = "com.powercess.mbrain"
     compileSdk = libs.versions.compileSdk.get().toInt()
     defaultConfig {
@@ -13,6 +14,7 @@ android {
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 3
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }
     buildTypes {
@@ -27,7 +29,21 @@ android {
     }
     kotlinOptions { jvmTarget = "11" }
     packaging.resources.excludes += setOf("META-INF/INDEX.LIST", "META-INF/io.netty.versions.properties")
+    packaging.jniLibs.useLegacyPackaging = true
+    packaging.jniLibs.keepDebugSymbols += "**/libfrpc.so"
+    sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("generated/frpc/jniLibs"))
 }
+val buildFrpc by tasks.registering(Exec::class) {
+    val output = layout.buildDirectory.dir("generated/frpc/jniLibs")
+    inputs.file(rootProject.file("scripts/build_frpc.py"))
+    outputs.dir(output)
+    val python = providers.environmentVariable("MBRAIN_PYTHON").orElse(if (System.getProperty("os.name").startsWith("Windows")) "python" else "python3")
+    commandLine(python.get(), rootProject.file("scripts/build_frpc.py").absolutePath,
+        "--ndk", android.sdkDirectory.resolve("ndk/${android.ndkVersion}").absolutePath,
+        "--output", output.get().asFile.absolutePath,
+        "--cache", rootProject.layout.buildDirectory.dir("frpc-source").get().asFile.absolutePath)
+}
+tasks.named("preBuild").configure { dependsOn(buildFrpc) }
 dependencies {
     implementation(project(":droid-mcp-core"))
     implementation(project(":droid-mcp-device"))
@@ -44,4 +60,6 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }

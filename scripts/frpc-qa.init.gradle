@@ -1,0 +1,8 @@
+// Isolate device integration tests from installed release and regular debug data.
+gradle.beforeProject { project ->
+    project.pluginManager.withPlugin('com.android.application') {
+        project.extensions.getByName('androidComponents').finalizeDsl { android ->
+            android.buildTypes.getByName('debug').applicationIdSuffix = '.frpcqa'
+        }
+    }
+}
