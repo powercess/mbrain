@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import com.powercess.mbrain.gateway.GatewayRuntime
 import com.powercess.mbrain.gateway.MBrainService
 import com.powercess.mbrain.ui.MBrainApp
+import com.powercess.mbrain.remote.RemoteRuntime
 
 class MainActivity : ComponentActivity() {
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -19,6 +20,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         GatewayRuntime.initialize(applicationContext)
+        RemoteRuntime.initialize(applicationContext)
         setContent {
             MBrainApp(
                 start = {

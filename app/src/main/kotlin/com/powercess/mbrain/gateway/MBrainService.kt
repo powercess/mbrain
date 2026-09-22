@@ -8,17 +8,20 @@ import com.powercess.mbrain.MainActivity
 import com.powercess.mbrain.R
 import io.droidmcp.core.DroidMcp
 import io.droidmcp.server.DroidMcpServerService
+import com.powercess.mbrain.remote.RemoteRuntime
 
 class MBrainService : DroidMcpServerService() {
     override fun createServer(): DroidMcp = GatewayRuntime.createServer(this)
     override fun onServerStarted(server: DroidMcp) {
         GatewayRuntime.started(server)
         getSystemService(android.app.NotificationManager::class.java).notify(DroidMcpServerService.NOTIFICATION_ID, buildNotification())
+        RemoteRuntime.gatewayChanged(GatewayRuntime.status.value.port)
     }
     override fun onServerStartFailed(error: Exception) = GatewayRuntime.failed(error)
-    override fun onServerStopped() = GatewayRuntime.stopped()
+    override fun onServerStopped() { RemoteRuntime.gatewayChanged(null); GatewayRuntime.stopped() }
 
     override fun onDestroy() {
+        RemoteRuntime.gatewayChanged(null)
         GatewayRuntime.shutdown()
         super.onDestroy()
     }

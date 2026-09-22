@@ -64,4 +64,38 @@ class FrpcControllerTest {
             assertEquals(4, processes.size)
         } finally { controller.close(); directory.deleteRecursively() }
     }
+
+    @Test fun `custom service survives MCP shutdown and certificate rotation affects only its users`() {
+        val directory = Files.createTempDirectory("frpc-independent-test").toFile()
+        val binary = File(System.getProperty("java.home"), "bin/" + if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
+        val certificate = testCertificate()
+        val replacement = testCertificate().copy(id = certificate.id)
+        val processes = CopyOnWriteArrayList<FakeProcess>()
+        val configs = CopyOnWriteArrayList<String>()
+        val controller = FrpcController(binary, directory, { _, _ -> }, { _, file ->
+            configs.add(file.readText()); FakeProcess().also { processes.add(it) }
+        })
+        val mcp = TunnelConfig(name = "mcp", server = "frp.example.com", remotePort = 18081, enabled = true)
+        val custom = TunnelConfig(name = "custom", server = "frp.example.com", remotePort = 18082,
+            target = TunnelTarget.CUSTOM, localPort = 8787, plugin = TunnelPlugin.TLS2RAW, certificateId = certificate.id, enabled = true)
+        try {
+            controller.reconcile(listOf(custom, mcp), null, listOf(certificate))
+            await { processes.size == 1 }
+            val customProcess = processes.single()
+            assertTrue(configs.single().contains("tls2raw"))
+            controller.reconcile(listOf(custom, mcp), 8765, listOf(certificate))
+            await { processes.size == 2 }
+            val mcpProcess = processes.last()
+            controller.reconcile(listOf(custom, mcp), 8765, listOf(replacement))
+            await { processes.size == 3 }
+            assertFalse(customProcess.isAlive)
+            assertTrue(mcpProcess.isAlive)
+            val replacementProcess = processes.last()
+            controller.reconcile(listOf(custom, mcp), null, listOf(replacement))
+            await { !mcpProcess.isAlive }
+            assertTrue(replacementProcess.isAlive)
+            controller.close()
+            await { processes.none { it.isAlive } && directory.listFiles().orEmpty().isEmpty() }
+        } finally { controller.close(); directory.deleteRecursively() }
+    }
 }

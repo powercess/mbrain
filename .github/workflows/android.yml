@@ -68,7 +68,7 @@ jobs:
           cache: false
       - name: Build, unit tests and lint
         if: steps.scope.outputs.android == 'true'
-        run: ./gradlew :app:assembleDebug :app:assembleRelease testDebugUnitTest :app:lintDebug :app:lintRelease --no-daemon --no-build-cache --max-workers=2 --stacktrace
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease testDebugUnitTest :app:lintDebug :app:lintRelease --no-daemon --no-build-cache --max-workers=2 --stacktrace
       - name: Verify supported ABIs and prepare APK
         if: steps.scope.outputs.android == 'true'
         run: |
