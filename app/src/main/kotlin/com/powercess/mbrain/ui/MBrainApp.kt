@@ -76,7 +76,7 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
                 if (route != "main") IconButton(onClick = back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") }
             }, actions = {
                 if (route == "main" && tab == 2) IconButton(onClick = { adding = true }) { Icon(Icons.Outlined.Add, "添加服务") }
-                else if (route == "main") Box(Modifier.padding(end = 16.dp)) { StatusPill(if (status.running) "运行中" else "已停止", status.running) }
+                else if (route == "main" && tab != 0) Box(Modifier.padding(end = 16.dp)) { StatusPill(if (status.running) "运行中" else "已停止", status.running) }
             }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)) },
             bottomBar = {
                 if (route == "main") NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest, tonalElevation = 0.dp) {

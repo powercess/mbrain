@@ -18,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.unit.dp
 import com.powercess.mbrain.data.*
 import com.powercess.mbrain.gateway.*
@@ -29,35 +28,41 @@ internal fun HomeScreen(status: GatewayStatus, config: GatewayConfig, start: () 
     var busy by remember { mutableStateOf(false) }
     LaunchedEffect(status.running, status.error) { busy = false }
     LaunchedEffect(busy) { if (busy) { kotlinx.coroutines.delay(5000); busy = false } }
-    Box(Modifier.fillMaxSize()) {
-        ScreenList {
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SummaryTile("可用工具", if (status.running) status.tools.size.toString() else "—", Icons.Outlined.Build,
-                        Modifier.weight(1f)) { open("tools:") }
-                    SummaryTile("MCP 服务", "${status.connections.values.count { it.state == "已连接" }} / ${config.connections.size}",
-                        Icons.Outlined.Hub, Modifier.weight(1f), green = true) { tab(2) }
+    ScreenList {
+        item { SectionLabel("能力概览") }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SummaryTile("可用工具", if (status.running) status.tools.size.toString() else "—", Icons.Outlined.Build,
+                    Modifier.weight(1f)) { open("tools:") }
+                SummaryTile("MCP 服务", "${status.connections.values.count { it.state == "已连接" }} / ${config.connections.size}",
+                    Icons.Outlined.Hub, Modifier.weight(1f), green = true) { tab(2) }
+            }
+        }
+        item {
+            Group(card = true) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("服务网关", style = MaterialTheme.typography.titleMedium)
+                        StatusPill(if (status.running) "已开启" else "已关闭", status.running)
+                    }
+                    FilledIconButton(
+                        onClick = { busy = true; if (status.running) stop() else start() },
+                        enabled = !busy,
+                        modifier = Modifier.size(64.dp).semantics {
+                            contentDescription = if (busy) "正在处理网关" else if (status.running) "关闭网关" else "开启网关"
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = if (status.running) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = if (status.running) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onTertiaryContainer,
+                        ),
+                    ) {
+                        if (busy) CircularProgressIndicator(Modifier.size(26.dp), color = LocalContentColor.current, strokeWidth = 2.dp)
+                        else Icon(if (status.running) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, null, Modifier.size(32.dp))
+                    }
                 }
             }
-            item {
-                Group { ActionRow("连接地址与凭据", icon = Icons.Outlined.Link, onClick = { open("credentials") }) }
-            }
-            status.error?.let { error -> item { Note(error, error = true) } }
-            // Leave room to scroll the final item clear of the floating action.
-            item { Spacer(Modifier.height(88.dp)) }
-        }
-        FloatingActionButton(
-            onClick = { if (!busy) { busy = true; if (status.running) stop() else start() } },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).size(64.dp).semantics {
-                contentDescription = if (busy) "正在处理网关" else if (status.running) "停止网关" else "启动网关"
-                if (busy) disabled()
-            },
-            shape = RoundedCornerShape(20.dp),
-            containerColor = if (status.running) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.tertiaryContainer,
-            contentColor = if (status.running) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onTertiaryContainer,
-        ) {
-            if (busy) CircularProgressIndicator(Modifier.size(26.dp), color = LocalContentColor.current, strokeWidth = 2.dp)
-            else Icon(if (status.running) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, null, Modifier.size(32.dp))
         }
     }
 }
