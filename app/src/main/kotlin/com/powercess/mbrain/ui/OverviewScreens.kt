@@ -173,11 +173,13 @@ internal fun CapabilityScreen(id: String, status: GatewayStatus, config: Gateway
 }
 
 @Composable
-internal fun SettingsScreen(appearance: String, open: (String) -> Unit, theme: () -> Unit) {
+internal fun SettingsScreen(appearance: String, open: (String) -> Unit, theme: () -> Unit, tunnelCount: Int, connectedCount: Int) {
     ScreenList {
         item { SectionLabel("连接") }
         item { Group {
             ActionRow("地址与凭据", "供 Agent 连接本机网关", Icons.Outlined.Key, { open("credentials") })
+            GroupDivider()
+            ActionRow("远程访问", if (tunnelCount == 0) "未配置" else "$connectedCount / $tunnelCount 已连接", Icons.Outlined.Public, { open("remote") })
             GroupDivider()
             ActionRow("使用说明", "电脑连接、运行方式与限制", Icons.Outlined.HelpOutline, { open("help") })
         } }
@@ -229,11 +231,12 @@ internal fun AboutScreen() {
 }
 
 @Composable
-internal fun HelpScreen(copy: (String, String) -> Unit) {
+internal fun HelpScreen(status: GatewayStatus, copy: (String, String) -> Unit) {
+    val command = status.port?.let { "adb forward tcp:$it tcp:$it" }
     ScreenList {
         item { SectionLabel("从电脑连接") }
-        item { Group { ActionRow("转发网关端口", "adb forward tcp:8765 tcp:8765", Icons.Outlined.Computer,
-            { copy("ADB 命令", "adb forward tcp:8765 tcp:8765") }, trailing = { Icon(Icons.Outlined.ContentCopy, null) }) } }
+        item { Group { ActionRow("转发网关端口", command ?: "启动网关后获取", Icons.Outlined.Computer,
+            command?.let { { copy("ADB 命令", it) } }, trailing = { if (command != null) Icon(Icons.Outlined.ContentCopy, null) }) } }
         item { Note("完成端口转发后，使用连接页中的地址和 Bearer Token 配置客户端。") }
         item { SectionLabel("运行方式") }
         item { Note("网关仅监听本机地址。停止网关会断开 MCP 并关闭直接托管的进程；应用不会在开机后自动启动。") }

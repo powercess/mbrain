@@ -48,7 +48,11 @@ jobs:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
       - name: Install SDK
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;28.2.13676358"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.3'
+          cache: false
       - name: Build and test release
         run: ./gradlew :app:assembleRelease testReleaseUnitTest :app:lintRelease --no-daemon --no-build-cache --max-workers=2 --stacktrace
       - name: Verify and stage unsigned release

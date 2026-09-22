@@ -23,7 +23,7 @@ data class McpConnectionConfig(
     val mode: ExecutionMode = ExecutionMode.APP,
     val enabled: Boolean = false,
 ) {
-    fun validate() {
+    fun validate(gatewayPort: Int? = null) {
         require(name.isNotBlank()) { "请填写服务名称" }
         require(id.matches(Regex("[a-f0-9]{32}"))) { "连接 ID 无效" }
         if (type == ConnectionType.HTTP) {
@@ -32,7 +32,8 @@ data class McpConnectionConfig(
             require(uri.scheme in listOf("http", "https")) { "仅支持 HTTP / HTTPS MCP" }
             require(uri.host in listOf("127.0.0.1", "localhost", "[::1]", "::1")) { "当前仅支持本机回环地址" }
             require(uri.userInfo == null && uri.fragment == null) { "地址不能包含用户名或 fragment" }
-            require(uri.port != 8765) { "不能连接 MBrain 自身端口" }
+            val effectivePort = if (uri.port >= 0) uri.port else if (uri.scheme == "https") 443 else 80
+            require(gatewayPort == null || effectivePort != gatewayPort) { "不能连接 MBrain 自身端口" }
             require(!token.contains('\r') && !token.contains('\n')) { "Token 不能包含换行" }
         } else {
             require(command.isNotEmpty() && command.first().startsWith('/')) { "命令首项必须是可执行文件绝对路径" }
