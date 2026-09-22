@@ -89,7 +89,7 @@ internal fun capabilityState(ready: Boolean, enabled: Boolean, activation: Activ
 @Composable
 internal fun CapabilitiesScreen(status: GatewayStatus, config: GatewayConfig, open: (String) -> Unit) {
     ScreenList {
-        item { SectionLabel("执行通道", "打开开关即可申请权限并启用") }
+        item { SectionLabel("手机能力") }
         item {
             Group {
                 ActionRow("Root", "超级用户执行权限", Icons.Outlined.AdminPanelSettings, { open("cap:root") },
@@ -99,12 +99,27 @@ internal fun CapabilitiesScreen(status: GatewayStatus, config: GatewayConfig, op
                     trailing = { StatusPill(capabilityState(status.shizukuReady, config.shizukuEnabled, status.shizukuActivation), status.shizukuReady && config.shizukuEnabled) })
             }
         }
-        item { SectionLabel("基础能力") }
+        item { SectionLabel("插件") }
         item {
-            Group {
-                ActionRow("应用管理", "查看应用、详情与启动", Icons.Outlined.Apps, { open("cap:apps") })
-                GroupDivider()
-                ActionRow("设备信息", "电量、存储与网络", Icons.Outlined.PhoneAndroid, { open("cap:device") })
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val singleColumn = maxWidth < 360.dp || androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+                val apps: @Composable (Modifier) -> Unit = { modifier ->
+                    CapabilityPluginCard("应用管理", Icons.Outlined.Apps, config.appsEnabled, modifier) { open("cap:apps") }
+                }
+                val device: @Composable (Modifier) -> Unit = { modifier ->
+                    CapabilityPluginCard("设备信息", Icons.Outlined.PhoneAndroid, true, modifier) { open("cap:device") }
+                }
+                if (singleColumn) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        apps(Modifier.fillMaxWidth())
+                        device(Modifier.fillMaxWidth())
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        apps(Modifier.weight(1f))
+                        device(Modifier.weight(1f))
+                    }
+                }
             }
         }
         item { SectionLabel("工具") }
@@ -112,6 +127,21 @@ internal fun CapabilitiesScreen(status: GatewayStatus, config: GatewayConfig, op
     }
 }
 
+@Composable
+private fun CapabilityPluginCard(name: String, icon: ImageVector, enabled: Boolean, modifier: Modifier, open: () -> Unit) {
+    Surface(onClick = open, modifier = modifier, shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                IconTile(icon, prominent = true)
+                Icon(Icons.Outlined.ChevronRight, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(name, style = MaterialTheme.typography.titleMedium)
+            StatusPill(if (enabled) "已启用" else "未启用", enabled)
+        }
+    }
+}
 @Composable
 internal fun CapabilityScreen(id: String, status: GatewayStatus, config: GatewayConfig, open: (String) -> Unit,
     notify: (String) -> Unit) {
