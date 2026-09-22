@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun ConnectionsScreen(status: GatewayStatus, config: GatewayConfig, open: (String) -> Unit, add: () -> Unit, home: () -> Unit) {
     ScreenList {
-        item { SectionLabel("我的服务", "${config.connections.size} 个配置 · ${status.connections.values.count { it.state == "已连接" }} 个已连接") }
+        item { SectionLabel("外部 MCP 服务") }
         if (!status.running) item { Group { ActionRow("网关尚未启动", "前往首页启动后连接服务", Icons.Outlined.PowerSettingsNew, home) } }
         if (config.connections.isEmpty()) item { EmptyState(Icons.Outlined.Hub, "接入你的第一个服务", "连接本机 HTTP 服务，或由 MBrain 托管 MCP 进程。", "添加服务", add) }
         items(config.connections, key = { it.id }) { connection ->
