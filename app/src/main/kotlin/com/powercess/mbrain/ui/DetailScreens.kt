@@ -31,6 +31,17 @@ internal fun ToolsScreen(status: GatewayStatus, source: String, open: (String) -
                 (query.isBlank() || listOf(tool.name, tool.description, tool.source, toolTitle(tool.name)).any { it.contains(query, true) })
         }
     }
+    if (!status.running) {
+        ScreenList {
+            item {
+                Box(Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
+                    Text("启动网关后查看工具", style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        return
+    }
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             OutlinedTextField(query, { query = it }, Modifier.widthIn(max = 720.dp).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -38,14 +49,13 @@ internal fun ToolsScreen(status: GatewayStatus, source: String, open: (String) -
                 trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Close, "清空搜索") } },
                 singleLine = true, shape = MaterialTheme.shapes.large)
         }
-        ScreenList {
-            if (!status.running) item { EmptyState(Icons.Outlined.PowerSettingsNew, "网关尚未启动", "返回首页启动网关后，查看当前可用工具。") }
-            else if (matches.isEmpty()) item { EmptyState(Icons.Outlined.SearchOff, "没有找到工具", if (query.isNotBlank()) "试试其他关键词。" else "启用能力或连接服务后，工具会出现在这里。") }
+        ScreenList(groupedRows = true) {
+            if (matches.isEmpty()) item { EmptyState(if (query.isNotBlank()) "没有匹配的工具" else "暂无工具") }
             else {
-                item { SectionLabel("${matches.size} 个工具", "选择工具查看完整说明") }
-                items(matches, key = { it.name }) { tool -> Group {
+                item { ListSection("共 ${matches.size} 个工具", firstSection = true) }
+                groupedItems(matches, key = { it.name }) { tool ->
                     ActionRow(toolTitle(tool.name), tool.source, Icons.Outlined.Build, { open("tool:${tool.name}") })
-                } }
+                }
             }
         }
     }
@@ -54,30 +64,40 @@ internal fun ToolsScreen(status: GatewayStatus, source: String, open: (String) -
 @Composable
 internal fun ToolScreen(tool: ToolInfo?, copy: (String, String) -> Unit) {
     ScreenList {
-        if (tool == null) item { EmptyState(Icons.Outlined.Build, "工具当前不可用", "对应服务可能已停止，请返回目录刷新查看。") }
+        if (tool == null) item { EmptyState("工具当前不可用", "返回列表刷新查看") }
         else {
             item { Group { ActionRow(toolTitle(tool.name), tool.source, Icons.Outlined.Build) } }
             item { SectionLabel("功能说明") }
-            item { SelectionContainer { Note(tool.description.ifBlank { "服务未提供工具说明。" }) } }
+            item { ContentCard(tool.description.ifBlank { "暂无说明" }) }
             item { SectionLabel("调用名称") }
-            item { Group { ActionRow(tool.name, "点击复制", Icons.Outlined.Code, { copy("工具名称", tool.name) }, trailing = { Icon(Icons.Outlined.ContentCopy, null) }) } }
+            item { Group(card = true) {
+                SelectionContainer { Text(tool.name, Modifier.fillMaxWidth().padding(16.dp), style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace) }
+                GroupDivider()
+                ActionRow("复制调用名称", icon = Icons.Outlined.ContentCopy, onClick = { copy("工具名称", tool.name) }, trailing = {})
+            } }
         }
     }
 }
 
 @Composable
-internal fun CredentialsScreen(status: GatewayStatus, copy: (String, String) -> Unit) {
+internal fun CredentialsScreen(status: GatewayStatus, copy: (String, String) -> Unit,
+    tunnels: List<com.powercess.mbrain.remote.TunnelConfig>, open: (String) -> Unit) {
     var reveal by rememberSaveable { mutableStateOf(false) }
+    var reset by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(status.token) { reveal = false }
     ScreenList {
-        item { SectionLabel("连接地址") }
-        item { Group { ActionRow("本机 MCP", GatewayRuntime.ENDPOINT, Icons.Outlined.Link,
-            { copy("连接地址", GatewayRuntime.ENDPOINT) }, trailing = { Icon(Icons.Outlined.ContentCopy, null) }) } }
+        item { SectionLabel("连接地址", firstSection = true) }
+        item { Group { ActionRow("本机 MCP", status.endpoint ?: "启动网关后获取", Icons.Outlined.Link,
+            status.endpoint?.let { { copy("连接地址", it) } }, trailing = { if (status.endpoint != null) Icon(Icons.Outlined.ContentCopy, null) }) } }
+        tunnels.filter { it.publicUrl.isNotBlank() }.forEach { tunnel ->
+            item(key = tunnel.id) { Group { ActionRow(tunnel.name, tunnel.publicUrl, Icons.Outlined.Public,
+                { open("tunnel:${tunnel.id}") }) } }
+        }
         item { SectionLabel("访问凭据") }
-        if (status.token == null) item { EmptyState(Icons.Outlined.Key, "启动后生成 Token", "每次重启网关，都会生成新的访问凭据。") }
+        if (status.token == null) item { EmptyState("启动网关后查看 Token") }
         else {
             item { Group(card = true) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Bearer Token", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     SelectionContainer { Text(if (reveal) status.token else "•••• •••• •••• ••••", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyMedium) }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -86,7 +106,12 @@ internal fun CredentialsScreen(status: GatewayStatus, copy: (String, String) -> 
                     }
                 }
             } }
-            item { Note("将 Token 填入客户端的 Bearer 认证。持有凭据的客户端可以调用已启用的全部工具。") }
+            item { Note("Token 固定保存在本机，重启不会更换；仅主动重置后改变。将它填入客户端的 Bearer 认证，即可调用已启用的全部工具。") }
+            item { TextButton(onClick = { reset = true }, modifier = Modifier.fillMaxWidth()) { Text("重置访问凭据", color = MaterialTheme.colorScheme.error) } }
         }
     }
+    if (reset) AlertDialog(onDismissRequest = { reset = false }, title = { Text("重置访问凭据？") },
+        text = { Text("所有客户端需要更新 Token。") },
+        confirmButton = { TextButton(onClick = { GatewayRuntime.rotateAccessToken(); reset = false }) { Text("重置") } },
+        dismissButton = { TextButton(onClick = { reset = false }) { Text("取消") } })
 }

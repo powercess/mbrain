@@ -24,6 +24,7 @@ class DroidMcp private constructor(
 ) {
     /** The HTTP server's effective bearer token, or null if the server is disabled or open (no auth). */
     val serverToken: String? get() = httpTransport?.effectiveToken
+    val serverPort: Int? get() = httpTransport?.boundPort
 
     /** The registered tools as live [McpTool] instances (in-process). */
     fun listTools(): List<McpTool> = inProcessTransport.listTools()
@@ -71,6 +72,7 @@ class DroidMcp private constructor(
      * disabled or running without auth. Re-issue the pairing QR after calling.
      */
     fun rotateToken(): String? = httpTransport?.rotateToken()
+    fun setServerToken(token: String) { httpTransport?.setToken(token) }
 
     /**
      * Mint a revocable token for a named client. Re-pairing an existing label
@@ -99,6 +101,7 @@ class DroidMcp private constructor(
         private val tools = mutableListOf<McpTool>()
         private var httpPort: Int? = null
         private var httpHost: String = "127.0.0.1"
+        private var fallbackToDynamicPort: Boolean = false
         private var authToken: String? = null
         private var requireAuth: Boolean = true
         private var readOnly: Boolean = false
@@ -147,8 +150,10 @@ class DroidMcp private constructor(
             readOnly: Boolean = false,
             context: Context? = null,
             host: String = "127.0.0.1",
+            fallbackToDynamicPort: Boolean = false,
         ) = apply {
-            require(port in 1..65535) { "Port must be between 1 and 65535" }
+            require(port in 0..65535) { "Port must be between 0 and 65535" }
+            this.fallbackToDynamicPort = fallbackToDynamicPort
             require(host.isNotBlank()) { "Host must not be blank" }
             this.httpHost = host
             this.httpPort = port
@@ -174,6 +179,7 @@ class DroidMcp private constructor(
                     auditSink = auditSink,
                     tls = tls,
                     host = httpHost,
+                    fallbackToDynamicPort = fallbackToDynamicPort,
                 )
             }
             return DroidMcp(registry, http, inProcess)

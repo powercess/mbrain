@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.powercess.mbrain.data.*
 import com.powercess.mbrain.gateway.*
+import com.powercess.mbrain.remote.*
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -26,6 +27,8 @@ import kotlinx.coroutines.launch
 fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
     val status by GatewayRuntime.status.collectAsState()
     val config by GatewayRuntime.config.collectAsState()
+    val remote by RemoteRuntime.config.collectAsState()
+    val tunnelStates by RemoteRuntime.status.collectAsState()
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("appearance", Context.MODE_PRIVATE) }
     var appearance by rememberSaveable { mutableStateOf(prefs.getString("theme", "system") ?: "system") }
@@ -39,6 +42,9 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
     var adding by rememberSaveable { mutableStateOf(false) }
     var themePicker by rememberSaveable { mutableStateOf(false) }
     var removal by rememberSaveable { mutableStateOf<String?>(null) }
+    var tunnelEditor by rememberSaveable { mutableStateOf<String?>(null) }
+    var serverEditor by rememberSaveable { mutableStateOf<String?>(null) }
+    var remoteRemoval by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val notify: (String) -> Unit = { scope.launch { snackbar.showSnackbar(it) } }
@@ -52,18 +58,21 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
         route == "main" -> if (tab == 0) "MBrain" else pages[tab]
         route.startsWith("cap:") -> capabilityName(route.substringAfter(':'))
         route.startsWith("connection:") -> config.connections.find { it.id == route.substringAfter(':') }?.name ?: "服务详情"
-        route.startsWith("tools:") -> "工具目录"
+        route == "tools:" -> "全部工具"
+        route.startsWith("tools:") -> "工具列表"
         route.startsWith("tool:") -> "工具详情"
         route == "credentials" -> "连接到 MBrain"
         route == "activity" -> "运行记录"
         route == "about" -> "关于 MBrain"
+        route == "remote" -> "内网穿透"
+        route.startsWith("tunnel:") -> remote.tunnels.find { it.id == route.substringAfter(':') }?.name ?: "隧道详情"
         else -> "使用说明"
     }
-    BackHandler(stack.size > 1) { back() }
+    BackHandler(stack.size > 1 && editor == null && tunnelEditor == null && serverEditor == null) { back() }
     LaunchedEffect(status.error) { status.error?.let { snackbar.showSnackbar(it) } }
     val holder = rememberSaveableStateHolder()
     MBrainTheme(dark) {
-        Scaffold(
+        if (editor == null) Scaffold(
             snackbarHost = { SnackbarHost(snackbar) },
             topBar = { TopAppBar(title = { Text(title, maxLines = 1) }, navigationIcon = {
                 if (route != "main") IconButton(onClick = back) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") }
@@ -88,23 +97,35 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
                             key == "tab:0" -> HomeScreen(status, config, start, stop, open, { tab = it })
                             key == "tab:1" -> CapabilitiesScreen(status, config, open)
                             key == "tab:2" -> ConnectionsScreen(status, config, open, { adding = true }, { tab = 0 })
-                            key == "tab:3" -> SettingsScreen(appearance, open, { themePicker = true })
+                            key == "tab:3" -> SettingsScreen(appearance, open, { themePicker = true }, remote.tunnels.size, tunnelStates.values.count { it.phase == TunnelPhase.CONNECTED })
                             key.startsWith("cap:") -> CapabilityScreen(key.substringAfter(':'), status, config, open, notify)
                             key.startsWith("tools:") -> ToolsScreen(status, key.substringAfter(':'), open)
                             key.startsWith("tool:") -> ToolScreen(status.tools.find { it.name == key.substringAfter(':') }, copy)
                             key.startsWith("connection:") -> ConnectionScreen(config.connections.find { it.id == key.substringAfter(':') }, status,
                                 open, { editor = it }, { removal = it })
-                            key == "credentials" -> CredentialsScreen(status, copy)
+                            key == "credentials" -> CredentialsScreen(status, copy, remote.tunnels, open)
                             key == "activity" -> ActivityScreen(status)
                             key == "about" -> AboutScreen()
-                            key == "help" -> HelpScreen(copy)
+                            key == "help" -> HelpScreen(status, copy)
+                            key == "remote" -> RemoteScreen(remote, tunnelStates, { destination ->
+                                if (destination == "servers") serverEditor = remote.server?.id ?: "new" else open(destination)
+                            }, {
+                                if (remote.server == null) serverEditor = "new" else tunnelEditor = "new"
+                            }, notify)
+                            key.startsWith("tunnel:") -> {
+                                val id = key.substringAfter(':')
+                                TunnelScreen(remote.tunnels.find { it.id == id }?.let(remote::resolve), tunnelStates[id] ?: TunnelStatus(), status, { destination ->
+                                        if (destination == "servers") serverEditor = remote.server?.id ?: "new" else open(destination)
+                                    },
+                                    { tunnelEditor = it }, { remoteRemoval = "tunnel:$it" }, copy, notify)
+                            }
                         }
                     }
                 }
             }
         }
         if (adding) ModalBottomSheet(onDismissRequest = { adding = false }) {
-            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("添加 MCP 服务", style = MaterialTheme.typography.headlineSmall)
                 Group {
                     ActionRow("HTTP 服务", "连接已有的本机 MCP", Icons.Outlined.Link, { adding = false; editor = "new:http" })
@@ -131,12 +152,38 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
             }
         }
 
+        tunnelEditor?.let { editorKey -> key("tunnel-editor:$editorKey") {
+            val initial = remember(editorKey) { if (editorKey == "new") TunnelConfig(serverId = remote.server?.id.orEmpty()) else remote.tunnels.find { it.id == editorKey } }
+            if (initial != null) TunnelEditor(initial, editorKey != "new", remote, { tunnelEditor = null }) { next ->
+                RemoteRuntime.saveTunnel(next); tunnelEditor = null
+                if (editorKey == "new") open("tunnel:${next.id}")
+                notify("已保存隧道")
+            }
+        } }
+        serverEditor?.let { editorKey -> key("server-editor:$editorKey") {
+            val initial = remember(editorKey) { if (editorKey == "new") TunnelServer() else remote.servers.find { it.id == editorKey } }
+            if (initial != null) ServerEditor(initial, editorKey != "new", remote, { serverEditor = null }, { remoteRemoval = "server:${initial.id}" }) { next ->
+                RemoteRuntime.saveServer(next); serverEditor = null; notify("已保存服务器")
+            }
+        } }
+        remoteRemoval?.let { target ->
+            AlertDialog(onDismissRequest = { remoteRemoval = null }, title = { Text(if (target.startsWith("tunnel:")) "删除此隧道？" else "删除此服务器？") },
+                text = { Text(if (target.startsWith("tunnel:")) "此隧道会停止并移除配置。" else "删除已保存的服务器配置，之后可重新添加。") },
+                confirmButton = { TextButton(onClick = {
+                    runCatching {
+                        if (target.startsWith("tunnel:")) { RemoteRuntime.removeTunnel(target.substringAfter(':')); back() }
+                        else { RemoteRuntime.removeServer(target.substringAfter(':')); serverEditor = null }
+                    }.onFailure { notify(it.message ?: "删除失败") }
+                    remoteRemoval = null
+                }) { Text("删除") } }, dismissButton = { TextButton(onClick = { remoteRemoval = null }) { Text("取消") } })
+        }
         if (themePicker) ModalBottomSheet(onDismissRequest = { themePicker = false }) {
-            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
                 Text("外观", style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(16.dp))
                 Group {
-                    listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色").forEach { (value, label) ->
+                    listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色").forEachIndexed { index, (value, label) ->
+                        if (index > 0) GroupDivider()
                         ActionRow(label, icon = if (value == "dark") Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
                             onClick = { appearance = value; prefs.edit().putString("theme", value).apply(); themePicker = false },
                             trailing = { if (appearance == value) Icon(Icons.Outlined.Check, "已选择", tint = MaterialTheme.colorScheme.primary) })

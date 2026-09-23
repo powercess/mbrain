@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -78,42 +79,82 @@ internal fun MBrainTheme(dark: Boolean, content: @Composable () -> Unit) {
 }
 
 @Composable
-internal fun ScreenList(state: LazyListState = rememberLazyListState(), content: LazyListScope.() -> Unit) {
+internal fun ScreenList(state: LazyListState = rememberLazyListState(), groupedRows: Boolean = false, content: LazyListScope.() -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(Modifier.widthIn(max = 720.dp).fillMaxSize(), state = state,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+            verticalArrangement = Arrangement.spacedBy(if (groupedRows) 2.dp else 8.dp), content = content)
+    }
+}
+
+/** Use with ScreenList(groupedRows = true). Rows stay lazy and retain stable item keys. */
+internal fun <T> LazyListScope.groupedItems(values: List<T>, key: (T) -> Any, row: @Composable (T) -> Unit) {
+    itemsIndexed(values, key = { _, value -> key(value) }) { index, value ->
+        val top = if (index == 0) 20.dp else 4.dp
+        val bottom = if (index == values.lastIndex) 20.dp else 4.dp
+        Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(topStart = top, topEnd = top,
+            bottomStart = bottom, bottomEnd = bottom), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            row(value)
+        }
     }
 }
 
 @Composable
-internal fun SectionLabel(title: String, subtitle: String? = null) {
-    Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+internal fun EditorSaveBar(label: String, enabled: Boolean = true, save: () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surface) {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box(Modifier.widthIn(max = 720.dp).fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Button(onClick = save, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) {
+                    Text(label)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SecondaryAction(label: String, icon: ImageVector? = null, enabled: Boolean = true, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        icon?.let { Icon(it, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)) }
+        Text(label)
+    }
+}
+
+@Composable
+internal fun ContentCard(text: String, monospace: Boolean = false) {
+    Group(card = true) {
+        androidx.compose.foundation.text.selection.SelectionContainer {
+            Text(text, Modifier.fillMaxWidth().padding(16.dp), style = MaterialTheme.typography.bodyMedium,
+                fontFamily = if (monospace) androidx.compose.ui.text.font.FontFamily.Monospace else null)
+        }
+    }
+}
+
+@Composable
+internal fun SectionLabel(title: String, subtitle: String? = null, firstSection: Boolean = false) {
+    Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = if (firstSection) 4.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary)
         subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 
+/** Keep the section-to-row gap at 8dp in a list whose row gap is 2dp. */
+@Composable
+internal fun ListSection(title: String, subtitle: String? = null, firstSection: Boolean = false) {
+    Column(Modifier.padding(bottom = 6.dp)) { SectionLabel(title, subtitle, firstSection) }
+}
+
 @Composable
 internal fun Group(card: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
     Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
-        color = if (card) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.background) {
+        color = if (card) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent) {
         Column(Modifier.fillMaxWidth(), content = content)
     }
 }
 
 @Composable
-internal fun GroupDivider() = Spacer(Modifier.fillMaxWidth().height(2.dp).background(MaterialTheme.colorScheme.background))
-
-@Composable
-internal fun IconTile(icon: ImageVector, prominent: Boolean = false) {
-    Surface(shape = RoundedCornerShape(14.dp), color = if (prominent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow) {
-        Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
-            Icon(icon, null, Modifier.size(22.dp), tint = if (prominent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
+internal fun GroupDivider() = Spacer(Modifier.fillMaxWidth().height(2.dp))
 
 @Composable
 internal fun ActionRow(title: String, subtitle: String? = null, icon: ImageVector,
@@ -148,13 +189,14 @@ internal fun StatusPill(text: String, good: Boolean = false, error: Boolean = fa
 }
 
 @Composable
-internal fun EmptyState(icon: ImageVector, title: String, description: String, action: String? = null, onAction: () -> Unit = {}) {
+internal fun EmptyState(title: String, description: String? = null, action: String? = null, onAction: () -> Unit = {}) {
     Column(Modifier.fillMaxWidth().padding(vertical = 36.dp, horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        IconTile(icon, prominent = true)
         Text(title, style = MaterialTheme.typography.titleMedium)
-        Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        description?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
         if (action != null) FilledTonalButton(onClick = onAction) { Text(action) }
     }
 }

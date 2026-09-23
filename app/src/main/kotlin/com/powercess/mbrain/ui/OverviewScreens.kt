@@ -11,14 +11,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.vectorResource
 import com.powercess.mbrain.R
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.unit.dp
 import com.powercess.mbrain.data.*
 import com.powercess.mbrain.gateway.*
@@ -29,35 +26,41 @@ internal fun HomeScreen(status: GatewayStatus, config: GatewayConfig, start: () 
     var busy by remember { mutableStateOf(false) }
     LaunchedEffect(status.running, status.error) { busy = false }
     LaunchedEffect(busy) { if (busy) { kotlinx.coroutines.delay(5000); busy = false } }
-    Box(Modifier.fillMaxSize()) {
-        ScreenList {
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SummaryTile("可用工具", if (status.running) status.tools.size.toString() else "—", Icons.Outlined.Build,
-                        Modifier.weight(1f)) { open("tools:") }
-                    SummaryTile("MCP 服务", "${status.connections.values.count { it.state == "已连接" }} / ${config.connections.size}",
-                        Icons.Outlined.Hub, Modifier.weight(1f), green = true) { tab(2) }
+    ScreenList {
+        item { SectionLabel("能力概览", firstSection = true) }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SummaryTile("可用工具", if (status.running) status.tools.size.toString() else "—", Icons.Outlined.Build,
+                    Modifier.weight(1f)) { open("tools:") }
+                SummaryTile("MCP 服务", "${status.connections.values.count { it.state == "已连接" }} / ${config.connections.size}",
+                    Icons.Outlined.Hub, Modifier.weight(1f), green = true) { tab(2) }
+            }
+        }
+        item {
+            Group(card = true) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("服务网关", style = MaterialTheme.typography.titleMedium)
+                        StatusPill(if (status.running) "已开启" else "已关闭", status.running)
+                    }
+                    FilledIconButton(
+                        onClick = { busy = true; if (status.running) stop() else start() },
+                        enabled = !busy,
+                        modifier = Modifier.size(64.dp).semantics {
+                            contentDescription = if (busy) "正在处理网关" else if (status.running) "关闭网关" else "开启网关"
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = if (status.running) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = if (status.running) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onTertiaryContainer,
+                        ),
+                    ) {
+                        if (busy) CircularProgressIndicator(Modifier.size(26.dp), color = LocalContentColor.current, strokeWidth = 2.dp)
+                        else Icon(if (status.running) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, null, Modifier.size(32.dp))
+                    }
                 }
             }
-            item {
-                Group { ActionRow("连接地址与凭据", icon = Icons.Outlined.Link, onClick = { open("credentials") }) }
-            }
-            status.error?.let { error -> item { Note(error, error = true) } }
-            // Leave room to scroll the final item clear of the floating action.
-            item { Spacer(Modifier.height(88.dp)) }
-        }
-        FloatingActionButton(
-            onClick = { if (!busy) { busy = true; if (status.running) stop() else start() } },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).size(64.dp).semantics {
-                contentDescription = if (busy) "正在处理网关" else if (status.running) "停止网关" else "启动网关"
-                if (busy) disabled()
-            },
-            shape = RoundedCornerShape(20.dp),
-            containerColor = if (status.running) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.tertiaryContainer,
-            contentColor = if (status.running) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onTertiaryContainer,
-        ) {
-            if (busy) CircularProgressIndicator(Modifier.size(26.dp), color = LocalContentColor.current, strokeWidth = 2.dp)
-            else Icon(if (status.running) Icons.Outlined.Stop else Icons.Outlined.PlayArrow, null, Modifier.size(32.dp))
         }
     }
 }
@@ -84,7 +87,7 @@ internal fun capabilityState(ready: Boolean, enabled: Boolean, activation: Activ
 @Composable
 internal fun CapabilitiesScreen(status: GatewayStatus, config: GatewayConfig, open: (String) -> Unit) {
     ScreenList {
-        item { SectionLabel("执行通道", "打开开关即可申请权限并启用") }
+        item { SectionLabel("手机能力", firstSection = true) }
         item {
             Group {
                 ActionRow("Root", "超级用户执行权限", Icons.Outlined.AdminPanelSettings, { open("cap:root") },
@@ -94,16 +97,17 @@ internal fun CapabilitiesScreen(status: GatewayStatus, config: GatewayConfig, op
                     trailing = { StatusPill(capabilityState(status.shizukuReady, config.shizukuEnabled, status.shizukuActivation), status.shizukuReady && config.shizukuEnabled) })
             }
         }
-        item { SectionLabel("基础能力") }
+        item { SectionLabel("插件") }
         item {
             Group {
-                ActionRow("应用管理", "查看应用、详情与启动", Icons.Outlined.Apps, { open("cap:apps") })
+                ActionRow("应用管理", if (config.appsEnabled) "已启用" else "未启用",
+                    Icons.Outlined.Widgets, { open("cap:apps") })
                 GroupDivider()
-                ActionRow("设备信息", "电量、存储与网络", Icons.Outlined.PhoneAndroid, { open("cap:device") })
+                ActionRow("设备信息", "已启用", Icons.Outlined.PhoneAndroid, { open("cap:device") })
             }
         }
         item { SectionLabel("工具") }
-        item { Group { ActionRow("浏览工具目录", if (status.running) "${status.tools.size} 个工具可供调用" else "启动网关后查看", Icons.Outlined.Search, { open("tools:") }) } }
+        item { Group { ActionRow("全部工具", if (status.running) "共 ${status.tools.size} 个工具" else "启动网关后查看", Icons.Outlined.Search, { open("tools:") }) } }
     }
 }
 
@@ -138,11 +142,13 @@ internal fun CapabilityScreen(id: String, status: GatewayStatus, config: Gateway
 }
 
 @Composable
-internal fun SettingsScreen(appearance: String, open: (String) -> Unit, theme: () -> Unit) {
+internal fun SettingsScreen(appearance: String, open: (String) -> Unit, theme: () -> Unit, tunnelCount: Int, connectedCount: Int) {
     ScreenList {
-        item { SectionLabel("连接") }
+        item { SectionLabel("连接", firstSection = true) }
         item { Group {
             ActionRow("地址与凭据", "供 Agent 连接本机网关", Icons.Outlined.Key, { open("credentials") })
+            GroupDivider()
+            ActionRow("内网穿透", "服务器与 TCP 隧道", Icons.Outlined.Public, { open("remote") })
             GroupDivider()
             ActionRow("使用说明", "电脑连接、运行方式与限制", Icons.Outlined.HelpOutline, { open("help") })
         } }
@@ -159,13 +165,13 @@ internal fun SettingsScreen(appearance: String, open: (String) -> Unit, theme: (
 
 @Composable
 internal fun ActivityScreen(status: GatewayStatus) {
-    ScreenList {
-        if (status.events.isEmpty()) item { EmptyState(Icons.Outlined.History, "还没有运行记录", "启动网关或连接服务后，活动会显示在这里。") }
+    ScreenList(groupedRows = true) {
+        if (status.events.isEmpty()) item { EmptyState("暂无运行记录") }
         else {
-            item { SectionLabel("最近 ${status.events.size} 条", "最新在前 · 仅保留本次进程内的记录") }
-            itemsIndexed(status.events) { _, event -> Group {
+            item { ListSection("最近 ${status.events.size} 条", "仅本次运行", firstSection = true) }
+            groupedItems(status.events.withIndex().toList(), key = { it.index }) { (_, event) ->
                 ActionRow(event, icon = if (event.contains("失败")) Icons.Outlined.ErrorOutline else Icons.Outlined.CheckCircle)
-            } }
+            }
         }
     }
 }
@@ -194,11 +200,12 @@ internal fun AboutScreen() {
 }
 
 @Composable
-internal fun HelpScreen(copy: (String, String) -> Unit) {
+internal fun HelpScreen(status: GatewayStatus, copy: (String, String) -> Unit) {
+    val command = status.port?.let { "adb forward tcp:$it tcp:$it" }
     ScreenList {
         item { SectionLabel("从电脑连接") }
-        item { Group { ActionRow("转发网关端口", "adb forward tcp:8765 tcp:8765", Icons.Outlined.Computer,
-            { copy("ADB 命令", "adb forward tcp:8765 tcp:8765") }, trailing = { Icon(Icons.Outlined.ContentCopy, null) }) } }
+        item { Group { ActionRow("转发网关端口", command ?: "启动网关后获取", Icons.Outlined.Computer,
+            command?.let { { copy("ADB 命令", it) } }, trailing = { if (command != null) Icon(Icons.Outlined.ContentCopy, null) }) } }
         item { Note("完成端口转发后，使用连接页中的地址和 Bearer Token 配置客户端。") }
         item { SectionLabel("运行方式") }
         item { Note("网关仅监听本机地址。停止网关会断开 MCP 并关闭直接托管的进程；应用不会在开机后自动启动。") }

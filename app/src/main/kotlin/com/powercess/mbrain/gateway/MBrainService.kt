@@ -8,14 +8,20 @@ import com.powercess.mbrain.MainActivity
 import com.powercess.mbrain.R
 import io.droidmcp.core.DroidMcp
 import io.droidmcp.server.DroidMcpServerService
+import com.powercess.mbrain.remote.RemoteRuntime
 
 class MBrainService : DroidMcpServerService() {
     override fun createServer(): DroidMcp = GatewayRuntime.createServer(this)
-    override fun onServerStarted(server: DroidMcp) = GatewayRuntime.started(server)
+    override fun onServerStarted(server: DroidMcp) {
+        GatewayRuntime.started(server)
+        getSystemService(android.app.NotificationManager::class.java).notify(DroidMcpServerService.NOTIFICATION_ID, buildNotification())
+        RemoteRuntime.gatewayChanged(GatewayRuntime.status.value.port)
+    }
     override fun onServerStartFailed(error: Exception) = GatewayRuntime.failed(error)
-    override fun onServerStopped() = GatewayRuntime.stopped()
+    override fun onServerStopped() { RemoteRuntime.gatewayChanged(null); GatewayRuntime.stopped() }
 
     override fun onDestroy() {
+        RemoteRuntime.gatewayChanged(null)
         GatewayRuntime.shutdown()
         super.onDestroy()
     }
@@ -26,7 +32,7 @@ class MBrainService : DroidMcpServerService() {
             return START_NOT_STICKY
         }
         super.onStartCommand(intent, flags, startId)
-        // Require an explicit user start after process death; tokens are session-scoped.
+        // Require an explicit user start after process death.
         return START_NOT_STICKY
     }
 
@@ -37,7 +43,7 @@ class MBrainService : DroidMcpServerService() {
         return NotificationCompat.Builder(this, DroidMcpServerService.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_mbrain)
             .setContentTitle("MBrain 正在运行")
-            .setContentText("本机 MCP 能力网关 · 端口 ${GatewayRuntime.PORT}")
+            .setContentText(GatewayRuntime.status.value.port?.let { "MCP 网关 · 端口 $it" } ?: "正在启动 MCP 网关")
             .setContentIntent(open)
             .addAction(android.R.drawable.ic_media_pause, "停止服务", stop)
             .setOngoing(true)

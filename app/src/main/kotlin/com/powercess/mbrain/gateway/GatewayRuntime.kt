@@ -4,6 +4,7 @@ import android.content.Context
 import com.powercess.mbrain.data.*
 import com.powercess.mbrain.mcp.*
 import com.powercess.mbrain.shell.*
+import com.powercess.mbrain.remote.SecretStore
 import io.droidmcp.apps.AppsTools
 import io.droidmcp.core.*
 import io.droidmcp.device.DeviceTools
@@ -23,18 +24,21 @@ data class ToolInfo(val name: String, val description: String, val source: Strin
 data class ConnectionStatus(val state: String = "未连接", val count: Int = 0, val error: String? = null)
 data class GatewayStatus(
     val running: Boolean = false, val token: String? = null,
+    val port: Int? = null,
     val tools: List<ToolInfo> = emptyList(), val error: String? = null,
     val rootReady: Boolean = false, val shizukuReady: Boolean = false,
     val rootActivation: ActivationState = ActivationState(), val shizukuActivation: ActivationState = ActivationState(),
     val connections: Map<String, ConnectionStatus> = emptyMap(),
     val events: List<String> = emptyList(),
-)
+) {
+    val endpoint: String? get() = port?.let { "http://127.0.0.1:$it/mcp" }
+}
 
 object GatewayRuntime {
     const val PORT = 8765
-    const val ENDPOINT = "http://127.0.0.1:8765/mcp"
     private lateinit var context: Context
     private lateinit var store: ConfigStore
+    private lateinit var secrets: SecretStore
     private val mutableConfig = MutableStateFlow(GatewayConfig())
     val config = mutableConfig.asStateFlow()
     private val mutableStatus = MutableStateFlow(GatewayStatus())
@@ -98,6 +102,7 @@ object GatewayRuntime {
             context = appContext.applicationContext
             store = ConfigStore(context)
             mutableConfig.value = store.load()
+            secrets = SecretStore(context)
             Shizuku.addBinderReceivedListenerSticky(binderReceived)
             Shizuku.addBinderDeadListener(binderDead)
             Shizuku.addRequestPermissionResultListener(permissionResult)
@@ -172,10 +177,21 @@ object GatewayRuntime {
         }
     }
     fun saveConnection(connection: McpConnectionConfig) {
-        connection.validate()
+        connection.validate(status.value.port)
         updateConfig { it.copy(connections = it.connections.filterNot { c -> c.id == connection.id } + connection) }
     }
     fun removeConnection(id: String) = updateConfig { it.copy(connections = it.connections.filterNot { c -> c.id == id }) }
+
+    fun rotateAccessToken() {
+        try {
+            // Persist first so a storage failure does not silently invalidate clients.
+            val next = SecretStore.newToken()
+            secrets.write("gateway_token", next)
+            server?.setServerToken(next)
+            mutableStatus.update { it.copy(token = next.takeIf { _ -> it.running }) }
+            event("访问凭据已重置")
+        } catch (_: Exception) { failed(IllegalStateException("访问凭据重置失败")) }
+    }
 
     fun createServer(appContext: Context): DroidMcp {
         initialize(appContext)
@@ -187,7 +203,8 @@ object GatewayRuntime {
                     event("${event.toolName} · ${if (event.success) "成功" else "失败"} · ${event.durationMs}ms")
                 }
             })
-            .enableHttpServer(port = PORT, host = "127.0.0.1", requireAuth = true, readOnly = false).build()
+            .enableHttpServer(port = PORT, host = "127.0.0.1", token = secrets.gatewayToken(), requireAuth = true,
+                readOnly = false, fallbackToDynamicPort = true).build()
     }
     private fun localTools(): List<McpTool> = buildList {
         addAll(DeviceTools.all(context))
@@ -220,7 +237,8 @@ object GatewayRuntime {
     }
     fun started(instance: DroidMcp) {
         server = instance
-        mutableStatus.update { it.copy(running = true, token = instance.serverToken, error = null) }
+        val port = checkNotNull(instance.serverPort)
+        mutableStatus.update { it.copy(running = true, token = instance.serverToken, port = port, error = null) }
         refreshTools()
         event("本机 MCP 服务已启动")
         config.value.connections.filter { it.enabled }.forEach { connect(it.id) }
@@ -236,7 +254,7 @@ object GatewayRuntime {
                 connectionState(id, ConnectionStatus("连接中"))
                 var peer: McpPeer? = null
                 try {
-                    item.validate()
+                    item.validate(status.value.port)
                     val rpc = when (item.type) {
                         ConnectionType.HTTP -> HttpRpcConnection(item)
                         ConnectionType.STDIO -> {
@@ -281,7 +299,7 @@ object GatewayRuntime {
     }
     fun stopped() {
         shutdown()
-        mutableStatus.update { it.copy(running = false, token = null, tools = emptyList(), connections = emptyMap()) }
+        mutableStatus.update { it.copy(running = false, token = null, port = null, tools = emptyList(), connections = emptyMap()) }
         event("网关及托管子进程已停止")
     }
 }
