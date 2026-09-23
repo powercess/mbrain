@@ -132,6 +132,9 @@ class FrpcController(
         entries.keys.toList().forEach(::stop)
         scope.cancel()
     }
+
+    // Await asynchronous process/config cleanup before deleting the owner's directory.
+    internal suspend fun awaitTermination() { scope.coroutineContext.job.join() }
 }
 
 private fun privateFile(directory: File, name: String, text: String): File = File(directory, name).apply {
