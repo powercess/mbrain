@@ -15,7 +15,7 @@ Android Studio 打开仓库根目录，运行 `app`。当前配置为 Kotlin 2.1
 使用标准 JDK 17，并将 `JAVA_HOME` 指向 JDK 安装目录；CI 使用 Temurin 17，不依赖特定厂商的自动下载配置。
 安装 Android SDK Platform 35 和 Build Tools 35.0.0。SDK 路径通过 `ANDROID_HOME` 或本机 `local.properties` 指定，不提交。设备上的 root、Shizuku、MT 服务无需运行在开发电脑上。
 
-内置 frpc 构建还需要 Python 3.9+、Go 1.26.3 和 Android NDK 28.2.13676358。Gradle 自动构建四种 ABI；`MBRAIN_PYTHON` 可指定 Python 路径。来源、构建和使用说明见[远程访问](remote-access.md)。
+内置 frpc 还需 Go 1.26.3、Python 3.9+ 和 Android NDK 28.2.13676358。Gradle 自动校验并编译固定的 frp 源码，为四种 ABI 生成可执行文件；可用 `MBRAIN_PYTHON` 指定 Python 路径。功能与设备集成测试见[内网穿透](remote-access.md)。
 
 ```powershell
 .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest :droid-mcp-core:testDebugUnitTest :droid-mcp-shell-core:testDebugUnitTest :droid-mcp-root:testDebugUnitTest :app:lintDebug

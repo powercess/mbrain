@@ -1,48 +1,95 @@
 package com.powercess.mbrain.remote
 
-import com.powercess.mbrain.data.McpConnectionConfig
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Test
 
 class TunnelConfigTest {
-    private fun tunnel() = TunnelConfig(name = "测试", server = "frp.example.com", remotePort = 18080)
+    @Test fun `legacy tunnels retain configuration without restarting automatically`() {
+        val legacy = """[{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"legacy","server":"frp.example.com","remotePort":18080,"enabled":true}]"""
+        val tunnels = Json { ignoreUnknownKeys = true }.decodeFromString<List<TunnelConfig>>(legacy)
+        RemoteConfig(tunnels = tunnels).validate()
+        assertEquals("legacy", tunnels.single().name)
+        assertEquals(TunnelTarget.MCP, tunnels.single().target)
+        assertEquals(18080, tunnels.single().remotePort)
+        assertFalse(tunnels.single().enabled)
+    }
 
-    @Test fun `config escapes credentials and always targets actual loopback port`() {
-        val config = tunnel().copy(token = "quotes\"and\\slashes")
-        val json = Json.parseToJsonElement(config.frpcConfig(41234)).jsonObject
-        assertEquals(config.token, json["auth"]!!.jsonObject["token"]!!.jsonPrimitive.content)
-        val proxy = json["proxies"]!!.jsonArray.single().jsonObject
-        assertEquals(41234, proxy["localPort"]!!.jsonPrimitive.int)
-        assertEquals("127.0.0.1", proxy["localIP"]!!.jsonPrimitive.content)
-        assertFalse(json.containsKey("webServer"))
+    private val base = TunnelConfig(name = "phone", server = "frp.example.com", remotePort = 18080)
+    private val certificateId = "a".repeat(32)
+    private val paths = mapOf(certificateId to CertificatePaths("/private/service.crt", "/private/service.key"))
+    private fun proxy(config: TunnelConfig) = Json.parseToJsonElement(config.frpcConfig("127.0.0.1" to 8787, paths))
+        .jsonObject["proxies"]!!.jsonArray.single().jsonObject
+
+    @Test fun `tcp forwards arbitrary local port and does not require running MCP`() {
+        val tunnel = base.copy(target = TunnelTarget.CUSTOM, localPort = 8080)
+        assertEquals("127.0.0.1" to 8080, tunnel.endpoint(null))
+        assertNull(base.endpoint(null))
+        assertEquals("127.0.0.1" to 41234, base.endpoint(41234))
+        assertEquals(8787, proxy(tunnel)["localPort"]!!.jsonPrimitive.int)
+        assertFalse(proxy(tunnel).containsKey("plugin"))
     }
-    @Test fun `invalid ports and duplicate server mapping are rejected`() {
-        val original = tunnel()
-        listOf(original.copy(remotePort = 0), original.copy(serverPort = 65536),
-            original.copy(publicUrl = "http://example.com/mcp"), original.copy(token = "{{ .Envs.TEST }}"),
-            original.copy(server = "https://example.com")).forEach {
-            assertThrows(IllegalArgumentException::class.java) { it.validate() }
+
+    @Test fun `https routes domains with passthrough for custom targets`() {
+        val tunnel = base.copy(type = ProxyType.HTTPS, target = TunnelTarget.CUSTOM, domains = listOf("phone.example.com"))
+        val generated = proxy(tunnel)
+        assertEquals("https", generated["type"]!!.jsonPrimitive.content)
+        assertFalse(generated.containsKey("remotePort"))
+        assertEquals("phone.example.com", generated["customDomains"]!!.jsonArray.single().jsonPrimitive.content)
+    }
+
+    @Test fun `both TLS plugins replace the raw local endpoint with plugin options`() {
+        for (plugin in listOf(TunnelPlugin.HTTPS2HTTP, TunnelPlugin.TLS2RAW)) {
+            val generated = proxy(base.copy(plugin = plugin, certificateId = certificateId))
+            assertFalse(generated.containsKey("localIP"))
+            assertFalse(generated.containsKey("localPort"))
+            val options = generated["plugin"]!!.jsonObject
+            assertEquals(plugin.wireName, options["type"]!!.jsonPrimitive.content)
+            assertEquals("127.0.0.1:8787", options["localAddr"]!!.jsonPrimitive.content)
+            assertEquals(paths.getValue(certificateId).key, options["keyPath"]!!.jsonPrimitive.content)
         }
-        assertThrows(IllegalArgumentException::class.java) { tunnel().validate(listOf(original)) }
-        original.copy(remotePort = 18081).validate(listOf(original))
     }
-    @Test fun `self connection follows runtime port not historical default`() {
-        val local = McpConnectionConfig(name = "local", endpoint = "http://127.0.0.1:41234/mcp")
-        assertThrows(IllegalArgumentException::class.java) { local.validate(41234) }
-        local.copy(endpoint = "http://127.0.0.1:8765/mcp").validate(41234)
+
+    @Test fun `frps client TLS is independent from service certificate`() {
+        val tunnel = base.copy(tlsCaId = certificateId, tlsClientCertificateId = certificateId, tlsServerName = "frps.example.com")
+        val generated = Json.parseToJsonElement(tunnel.frpcConfig("::1" to 8080, paths)).jsonObject
+        val tls = generated["transport"]!!.jsonObject["tls"]!!.jsonObject
+        assertEquals("frps.example.com", tls["serverName"]!!.jsonPrimitive.content)
+        assertEquals("/private/service.crt", tls["trustedCaFile"]!!.jsonPrimitive.content)
+        assertEquals("/private/service.key", tls["keyFile"]!!.jsonPrimitive.content)
+        assertFalse(generated["proxies"]!!.jsonArray.single().jsonObject.containsKey("plugin"))
     }
-    @Test fun `only proxy success marks connected and logs do not expose server text`() {
-        assertNull(classifyFrpcLine("login to server success secret-value"))
-        assertEquals(TunnelPhase.CONNECTED, classifyFrpcLine("[proxy] start proxy success")!!.first)
-        assertEquals(TunnelPhase.ERROR, classifyFrpcLine("start error: port already used secret-value")!!.first)
-        assertFalse(classifyFrpcLine("login to server failed secret-value")!!.second!!.contains("secret-value"))
-        assertEquals(TunnelPhase.RETRYING, classifyFrpcLine("try to connect to server...")!!.first)
+
+    @Test fun `invalid or conflicting configurations fail before launching`() {
+        val bad = listOf(base.copy(server = "https://frp.example.com"), base.copy(serverPort = 0),
+            base.copy(localPort = 65536), base.copy(token = "{{ .Envs.SECRET }}"),
+            base.copy(type = ProxyType.HTTPS, domains = listOf("phone.example.com")),
+            base.copy(plugin = TunnelPlugin.TLS2RAW), base.copy(publicUrl = "https://phone.example.com/wrong"),
+            base.copy(type = ProxyType.HTTPS, target = TunnelTarget.CUSTOM, domains = listOf("phone.example.com:443")))
+        bad.forEach { assertThrows(IllegalArgumentException::class.java) { it.validate() } }
+        assertThrows(IllegalArgumentException::class.java) { base.validate(listOf(base.copy(id = "b".repeat(32)))) }
+        val https = base.copy(type = ProxyType.HTTPS, target = TunnelTarget.CUSTOM, domains = listOf("phone.example.com"))
+        assertThrows(IllegalArgumentException::class.java) { https.validate(listOf(https.copy(id = "b".repeat(32), domains = listOf("PHONE.example.com")))) }
     }
-    @Test fun `log line consumption is bounded and continues after oversized line`() {
-        val reader = ("x".repeat(20_000) + "\nnext\n").reader()
-        assertEquals(4096, reader.boundedLine()!!.length)
-        assertEquals("next", reader.boundedLine())
-        assertNull(reader.boundedLine())
+
+    @Test fun `saved configuration never silently re-enables tunnels`() {
+        val json = Json { encodeDefaults = true }
+        val text = json.encodeToString(RemoteConfig(tunnels = listOf(base.copy(enabled = true))))
+        assertFalse(json.decodeFromString<RemoteConfig>(text).tunnels.single().enabled)
+    }
+
+    @Test fun `certificate references and private keys are required`() {
+        val tunnel = base.copy(plugin = TunnelPlugin.HTTPS2HTTP, certificateId = certificateId)
+        assertThrows(IllegalArgumentException::class.java) { RemoteConfig(listOf(tunnel)).validate() }
+        assertThrows(IllegalArgumentException::class.java) {
+            RemoteConfig(listOf(tunnel), listOf(TunnelCertificate(id = certificateId, name = "CA", pem = "placeholder"))).validate()
+        }
+    }
+
+    @Test fun `untrusted log messages cannot leak into visible errors`() {
+        assertNull(classifyFrpcLine("arbitrary secret value"))
+        assertEquals("服务器认证失败", classifyFrpcLine("token [private] doesn't match")!!.second)
+        assertEquals(TunnelPhase.CONNECTED, classifyFrpcLine("start proxy success")!!.first)
     }
 }
