@@ -22,6 +22,7 @@ internal fun validHost(value: String): Boolean = value.isNotBlank() && value.len
 data class TunnelConfig(
     val id: String = newId(),
     val name: String = "",
+    val serverId: String = "",
     val server: String = "",
     val serverPort: Int = 7000,
     val token: String = "",
@@ -42,6 +43,11 @@ data class TunnelConfig(
     @Transient val enabled: Boolean = false,
 ) {
     val proxyName: String get() = "mbrain-$id"
+    val accessUrl: String get() = publicUrl.ifBlank {
+        if (target == TunnelTarget.MCP && validHost(server) && remotePort in 1..65535)
+            URI("http", null, server, remotePort, "/mcp", null, null).toASCIIString()
+        else ""
+    }
     fun endpoint(mcpPort: Int?): Pair<String, Int>? = if (target == TunnelTarget.MCP)
         mcpPort?.let { "127.0.0.1" to it } else localHost to localPort
 
@@ -54,7 +60,7 @@ data class TunnelConfig(
         require(validHost(localHost) && localPort in 1..65535) { "请填写有效的本地地址和端口" }
         require(type != ProxyType.HTTPS || plugin != TunnelPlugin.TLS2RAW) { "TLS → TCP 插件需要 TCP 代理" }
         require(target != TunnelTarget.MCP || type != ProxyType.HTTPS || plugin == TunnelPlugin.HTTPS2HTTP) { "MBrain 使用 HTTP，请选择 HTTPS → HTTP 插件" }
-        if (type == ProxyType.TCP) require(remotePort in 1..65535) { "映射端口应为 1–65535" }
+        if (type == ProxyType.TCP) require(remotePort in 1..65535) { "公网访问端口应为 1–65535" }
         else require(domains.isNotEmpty() && domains.size <= 20 && domains.distinctBy { it.lowercase() }.size == domains.size &&
             domains.all { validHost(it) && ':' !in it && it.contains('.') }) { "请填写有效且不重复的域名（不含协议或端口）" }
         require(plugin == TunnelPlugin.NONE || validId(certificateId)) { "请选择包含私钥的服务证书" }
@@ -69,48 +75,41 @@ data class TunnelConfig(
         }
         require(others.none { other -> other.id != id && other.server.equals(server, true) && other.type == type &&
             (if (type == ProxyType.TCP) other.remotePort == remotePort else other.serverPort == serverPort &&
-                other.domains.any { domain -> domains.any { it.equals(domain, true) } }) }) { "此服务器的映射端口或域名已被其他隧道使用" }
+                other.domains.any { domain -> domains.any { it.equals(domain, true) } }) }) { "此服务器的公网访问端口或域名已被其他隧道使用" }
     }
 
-    fun frpcConfig(endpoint: Pair<String, Int>, certificatePaths: Map<String, CertificatePaths> = emptyMap()): String {
+    // Legacy fields above remain readable so old configurations can be edited safely.
+    fun supportsBasicTcp(): Boolean = type == ProxyType.TCP && plugin == TunnelPlugin.NONE &&
+        tlsCaId.isEmpty() && tlsClientCertificateId.isEmpty() && tlsServerName.isEmpty()
+
+    fun requireBasicTcp() {
+        require(supportsBasicTcp()) { "此配置使用已停用的 HTTPS / TLS 功能，请重新编辑为 TCP 配置" }
+        require(publicUrl.isBlank() || URI(publicUrl).scheme == "http") { "当前仅支持 HTTP 公网地址" }
+    }
+
+    fun asBasicTcp() = copy(type = ProxyType.TCP, plugin = TunnelPlugin.NONE, domains = emptyList(),
+        certificateId = "", hostHeaderRewrite = "", tlsServerName = "", tlsCaId = "", tlsClientCertificateId = "",
+        publicUrl = publicUrl.takeIf { it.isBlank() || runCatching { URI(it).scheme == "http" }.getOrDefault(false) }.orEmpty())
+
+    fun frpcConfig(endpoint: Pair<String, Int>): String {
         validate()
+        requireBasicTcp()
         require(validHost(endpoint.first) && endpoint.second in 1..65535)
-        fun certificate(id: String) = requireNotNull(certificatePaths[id]) { "证书不可用" }
         return buildJsonObject {
             put("serverAddr", server); put("serverPort", serverPort); put("loginFailExit", false)
             putJsonObject("auth") { put("method", "token"); put("token", token) }
-            putJsonObject("transport") { putJsonObject("tls") {
-                put("enable", true)
-                if (tlsServerName.isNotEmpty()) put("serverName", tlsServerName)
-                if (tlsCaId.isNotEmpty()) put("trustedCaFile", certificate(tlsCaId).certificate)
-                if (tlsClientCertificateId.isNotEmpty()) {
-                    put("certFile", certificate(tlsClientCertificateId).certificate)
-                    put("keyFile", requireNotNull(certificate(tlsClientCertificateId).key))
-                }
-            } }
+            // Transport encryption is independent of the TCP proxy and requires no HTTPS configuration.
+            putJsonObject("transport") { putJsonObject("tls") { put("enable", true) } }
             putJsonObject("log") { put("to", "console"); put("level", "info"); put("disablePrintColor", true) }
             putJsonArray("proxies") { addJsonObject {
-                put("name", proxyName); put("type", type.name.lowercase())
-                if (type == ProxyType.TCP) put("remotePort", remotePort)
-                else putJsonArray("customDomains") { domains.forEach { add(it) } }
-                if (plugin == TunnelPlugin.NONE) {
-                    put("localIP", endpoint.first); put("localPort", endpoint.second)
-                } else putJsonObject("plugin") {
-                    put("type", plugin.wireName)
-                    put("localAddr", "${if (':' in endpoint.first) "[${endpoint.first}]" else endpoint.first}:${endpoint.second}")
-                    put("crtPath", certificate(certificateId).certificate)
-                    put("keyPath", requireNotNull(certificate(certificateId).key))
-                    if (plugin == TunnelPlugin.HTTPS2HTTP && hostHeaderRewrite.isNotEmpty()) put("hostHeaderRewrite", hostHeaderRewrite)
-                }
+                put("name", proxyName); put("type", "tcp"); put("remotePort", remotePort)
+                put("localIP", endpoint.first); put("localPort", endpoint.second)
             } }
         }.toString()
     }
-    fun certificateIds(): Set<String> = setOf(
-        certificateId.takeIf { plugin != TunnelPlugin.NONE }.orEmpty(), tlsCaId, tlsClientCertificateId
-    ).filter { it.isNotEmpty() }.toSet()
+
 }
 
-data class CertificatePaths(val certificate: String, val key: String?)
 enum class TunnelPhase(val label: String) {
     OFF("已关闭"), WAITING("等待 MCP 网关"), CONNECTING("连接中"), CONNECTED("隧道已注册"), RETRYING("重连中"), ERROR("连接失败")
 }
@@ -123,7 +122,7 @@ data class TunnelStatus(
 internal fun classifyFrpcLine(line: String): Pair<TunnelPhase, String?>? = when {
     "start proxy success" in line -> TunnelPhase.CONNECTED to null
     "token" in line && listOf("mismatch", "invalid", "not match", "doesn't match").any { it in line } -> TunnelPhase.ERROR to "服务器认证失败"
-    "port already used" in line || "port already in use" in line -> TunnelPhase.ERROR to "服务器映射端口被占用"
+    "port already used" in line || "port already in use" in line -> TunnelPhase.ERROR to "服务器公网访问端口被占用"
     "start error" in line || "start proxy error" in line -> TunnelPhase.ERROR to "隧道注册失败，请检查端口、域名和服务器配置"
     "login to server failed" in line || "connect to server error" in line -> TunnelPhase.RETRYING to "无法连接服务器，正在重试"
     listOf("try to connect to server", "reconnect", "heartbeat timeout", "control writer is closing", "read from control").any { it in line } -> TunnelPhase.RETRYING to null

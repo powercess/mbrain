@@ -4,7 +4,6 @@ Build/install app and androidTest APKs first. Use an isolated debug application 
 the script refuses the regular user-facing package. Requires Go, adb, built frp source.
 """
 import argparse
-import base64
 import json
 import os
 from pathlib import Path
@@ -33,20 +32,18 @@ def run(args):
     binary = source / ("frps-test.exe" if os.name == "nt" else "frps-test")
     subprocess.run(["go", "build", "-trimpath", "-buildvcs=false", "-tags=frps", "-o", str(binary), "./cmd/frps"], cwd=source, check=True)
     ports = {}
-    while len(ports) < 4:
+    while len(ports) < 3:
         candidate = free_port()
         if candidate not in ports.values():
-            ports[["controlPort", "tcpPort", "rawPort", "httpsPort"][len(ports)]] = candidate
+            ports[["controlPort", "tcpPort", "mcpPort"][len(ports)]] = candidate
     with tempfile.TemporaryDirectory(prefix="mbrain-frpc-test-") as temporary:
         directory = Path(temporary)
-        subprocess.run(["go", "run", str(root / "scripts/fixtures/frpc-certificate.go"), str(directory)], check=True)
         token = secrets.token_urlsafe(24)
         config = {
             "bindAddr": "127.0.0.1", "bindPort": ports["controlPort"], "proxyBindAddr": "127.0.0.1",
-            "vhostHTTPSPort": ports["httpsPort"], "auth": {"method": "token", "token": token},
-            "transport": {"tls": {"force": True, "certFile": str(directory / "certificate.crt"),
-                "keyFile": str(directory / "private.key"), "trustedCaFile": str(directory / "certificate.crt")}},
-            "allowPorts": [{"single": ports["tcpPort"]}, {"single": ports["rawPort"]}],
+            "auth": {"method": "token", "token": token},
+            "transport": {"tls": {"force": True}},
+            "allowPorts": [{"single": ports["tcpPort"]}, {"single": ports["mcpPort"]}],
         }
         config_file = directory / "frps.json"
         config_file.write_text(json.dumps(config), encoding="utf-8")
@@ -71,9 +68,7 @@ def run(args):
                 subprocess.run(adb + ["shell", "am", "start", "-n", args.package + "/com.powercess.mbrain.MainActivity"], check=True, stdout=subprocess.DEVNULL)
                 time.sleep(1)
                 command = adb + ["shell", "am", "instrument", "-w", "-r", "-e", "class", "com.powercess.mbrain.remote.FrpcDeviceTest"]
-                parameters = dict(ports, frpToken=token,
-                    certificate=base64.b64encode((directory / "certificate.crt").read_bytes()).decode(),
-                    privateKey=base64.b64encode((directory / "private.key").read_bytes()).decode())
+                parameters = dict(ports, frpToken=token)
                 for name, value in parameters.items():
                     command += ["-e", name, str(value)]
                 command += [args.package + ".test/androidx.test.runner.AndroidJUnitRunner"]
