@@ -58,7 +58,8 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
         route == "main" -> if (tab == 0) "MBrain" else pages[tab]
         route.startsWith("cap:") -> capabilityName(route.substringAfter(':'))
         route.startsWith("connection:") -> config.connections.find { it.id == route.substringAfter(':') }?.name ?: "服务详情"
-        route.startsWith("tools:") -> "工具目录"
+        route == "tools:" -> "全部工具"
+        route.startsWith("tools:") -> "工具列表"
         route.startsWith("tool:") -> "工具详情"
         route == "credentials" -> "连接到 MBrain"
         route == "activity" -> "运行记录"
@@ -120,7 +121,7 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
             }
         }
         if (adding) ModalBottomSheet(onDismissRequest = { adding = false }) {
-            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text("添加 MCP 服务", style = MaterialTheme.typography.headlineSmall)
                 Group {
                     ActionRow("HTTP 服务", "连接已有的本机 MCP", Icons.Outlined.Link, { adding = false; editor = "new:http" })
@@ -173,11 +174,12 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
                 }) { Text("删除") } }, dismissButton = { TextButton(onClick = { remoteRemoval = null }) { Text("取消") } })
         }
         if (themePicker) ModalBottomSheet(onDismissRequest = { themePicker = false }) {
-            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
                 Text("外观", style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(16.dp))
                 Group {
-                    listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色").forEach { (value, label) ->
+                    listOf("system" to "跟随系统", "light" to "浅色", "dark" to "深色").forEachIndexed { index, (value, label) ->
+                        if (index > 0) GroupDivider()
                         ActionRow(label, icon = if (value == "dark") Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
                             onClick = { appearance = value; prefs.edit().putString("theme", value).apply(); themePicker = false },
                             trailing = { if (appearance == value) Icon(Icons.Outlined.Check, "已选择", tint = MaterialTheme.colorScheme.primary) })

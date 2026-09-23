@@ -11,8 +11,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.vectorResource
 import com.powercess.mbrain.R
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -29,7 +27,7 @@ internal fun HomeScreen(status: GatewayStatus, config: GatewayConfig, start: () 
     LaunchedEffect(status.running, status.error) { busy = false }
     LaunchedEffect(busy) { if (busy) { kotlinx.coroutines.delay(5000); busy = false } }
     ScreenList {
-        item { SectionLabel("能力概览") }
+        item { SectionLabel("能力概览", firstSection = true) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 SummaryTile("可用工具", if (status.running) status.tools.size.toString() else "—", Icons.Outlined.Build,
@@ -89,7 +87,7 @@ internal fun capabilityState(ready: Boolean, enabled: Boolean, activation: Activ
 @Composable
 internal fun CapabilitiesScreen(status: GatewayStatus, config: GatewayConfig, open: (String) -> Unit) {
     ScreenList {
-        item { SectionLabel("手机能力") }
+        item { SectionLabel("手机能力", firstSection = true) }
         item {
             Group {
                 ActionRow("Root", "超级用户执行权限", Icons.Outlined.AdminPanelSettings, { open("cap:root") },
@@ -101,47 +99,18 @@ internal fun CapabilitiesScreen(status: GatewayStatus, config: GatewayConfig, op
         }
         item { SectionLabel("插件") }
         item {
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val singleColumn = maxWidth < 360.dp || androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
-                val apps: @Composable (Modifier) -> Unit = { modifier ->
-                    CapabilityPluginCard("应用管理", Icons.Outlined.Apps, config.appsEnabled, modifier) { open("cap:apps") }
-                }
-                val device: @Composable (Modifier) -> Unit = { modifier ->
-                    CapabilityPluginCard("设备信息", Icons.Outlined.PhoneAndroid, true, modifier) { open("cap:device") }
-                }
-                if (singleColumn) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        apps(Modifier.fillMaxWidth())
-                        device(Modifier.fillMaxWidth())
-                    }
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        apps(Modifier.weight(1f))
-                        device(Modifier.weight(1f))
-                    }
-                }
+            Group {
+                ActionRow("应用管理", if (config.appsEnabled) "已启用" else "未启用",
+                    Icons.Outlined.Widgets, { open("cap:apps") })
+                GroupDivider()
+                ActionRow("设备信息", "已启用", Icons.Outlined.PhoneAndroid, { open("cap:device") })
             }
         }
         item { SectionLabel("工具") }
-        item { Group { ActionRow("浏览工具目录", if (status.running) "${status.tools.size} 个工具可供调用" else "启动网关后查看", Icons.Outlined.Search, { open("tools:") }) } }
+        item { Group { ActionRow("全部工具", if (status.running) "共 ${status.tools.size} 个工具" else "启动网关后查看", Icons.Outlined.Search, { open("tools:") }) } }
     }
 }
 
-@Composable
-private fun CapabilityPluginCard(name: String, icon: ImageVector, enabled: Boolean, modifier: Modifier, open: () -> Unit) {
-    Surface(onClick = open, modifier = modifier, shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween) {
-                IconTile(icon, prominent = true)
-                Icon(Icons.Outlined.ChevronRight, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text(name, style = MaterialTheme.typography.titleMedium)
-            StatusPill(if (enabled) "已启用" else "未启用", enabled)
-        }
-    }
-}
 @Composable
 internal fun CapabilityScreen(id: String, status: GatewayStatus, config: GatewayConfig, open: (String) -> Unit,
     notify: (String) -> Unit) {
@@ -175,7 +144,7 @@ internal fun CapabilityScreen(id: String, status: GatewayStatus, config: Gateway
 @Composable
 internal fun SettingsScreen(appearance: String, open: (String) -> Unit, theme: () -> Unit, tunnelCount: Int, connectedCount: Int) {
     ScreenList {
-        item { SectionLabel("连接") }
+        item { SectionLabel("连接", firstSection = true) }
         item { Group {
             ActionRow("地址与凭据", "供 Agent 连接本机网关", Icons.Outlined.Key, { open("credentials") })
             GroupDivider()
@@ -196,13 +165,13 @@ internal fun SettingsScreen(appearance: String, open: (String) -> Unit, theme: (
 
 @Composable
 internal fun ActivityScreen(status: GatewayStatus) {
-    ScreenList {
-        if (status.events.isEmpty()) item { EmptyState(Icons.Outlined.History, "还没有运行记录", "启动网关或连接服务后，活动会显示在这里。") }
+    ScreenList(groupedRows = true) {
+        if (status.events.isEmpty()) item { EmptyState("暂无运行记录") }
         else {
-            item { SectionLabel("最近 ${status.events.size} 条", "最新在前 · 仅保留本次进程内的记录") }
-            itemsIndexed(status.events) { _, event -> Group {
+            item { ListSection("最近 ${status.events.size} 条", "仅本次运行", firstSection = true) }
+            groupedItems(status.events.withIndex().toList(), key = { it.index }) { (_, event) ->
                 ActionRow(event, icon = if (event.contains("失败")) Icons.Outlined.ErrorOutline else Icons.Outlined.CheckCircle)
-            } }
+            }
         }
     }
 }

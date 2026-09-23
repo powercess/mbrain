@@ -22,3 +22,10 @@
 - Titles may be written in Chinese or English.
 - Examples: `fix: 修复保存按钮遮挡`, `fix(ui): keep the save button visible`, `docs: 更新开发规范`.
 - Apply the same format to merge and squash commit titles when creating or editing them.
+
+# UI style skill
+
+- For MBrain UI changes or reviews, read and apply [.agents/skills/mbrain-style/SKILL.md](.agents/skills/mbrain-style/SKILL.md) before editing.
+- Keep visual values in DESIGN.md and shared implementations in DesignSystem.kt; do not create per-page variants of grouped action rows.
+- After each application/UI change, rebuild and verify on the connected test device. Skill/documentation-only changes require lightweight validation.
+- Do not create a pull request until the user explicitly requests it.
