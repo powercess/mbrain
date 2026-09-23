@@ -28,19 +28,17 @@ import kotlinx.serialization.json.*
 @Composable
 internal fun RemoteScreen(config: RemoteConfig, states: Map<String, TunnelStatus>, open: (String) -> Unit, add: () -> Unit, notify: (String) -> Unit) {
     val failure by RemoteRuntime.error.collectAsState()
-    ScreenList {
+    ScreenList(groupedRows = true) {
         failure?.let { item { Note(it, error = true) } }
         item { Group { ActionRow("证书管理", "导入服务证书、私钥和 CA", Icons.Outlined.VerifiedUser, { open("certificates") }) } }
-        if (config.tunnels.isEmpty()) item { EmptyState(Icons.Outlined.Public, "还没有隧道", "连接你自己的 frps，转发手机上的服务", "添加隧道", add) }
+        if (config.tunnels.isEmpty()) item { EmptyState("暂无隧道", action = "添加隧道", onAction = add) }
         else {
-            item { SectionLabel("我的隧道", "${states.values.count { it.phase == TunnelPhase.CONNECTED }} / ${config.tunnels.size} 已注册") }
-            items(config.tunnels, key = { it.id }) { tunnel ->
-                Group { ActionRow(tunnel.name, "${tunnel.type} · ${(states[tunnel.id] ?: TunnelStatus()).phase.label}", Icons.Outlined.Public,
-                    { open("tunnel:${tunnel.id}") }, trailing = { TunnelSwitch(tunnel, notify) }) }
+            item { ListSection("我的隧道", "${states.values.count { it.phase == TunnelPhase.CONNECTED }} / ${config.tunnels.size} 已注册") }
+            groupedItems(config.tunnels, key = { it.id }) { tunnel ->
+                ActionRow(tunnel.name, "${tunnel.type} · ${(states[tunnel.id] ?: TunnelStatus()).phase.label}", Icons.Outlined.Public,
+                    { open("tunnel:${tunnel.id}") }, trailing = { TunnelSwitch(tunnel, notify) })
             }
-            item { OutlinedButton(onClick = add, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(8.dp)); Text("添加隧道")
-            } }
+            item { SecondaryAction("添加隧道", Icons.Outlined.Add, onClick = add) }
         }
     }
 }
@@ -68,7 +66,7 @@ internal fun TunnelScreen(tunnel: TunnelConfig?, state: TunnelStatus, gateway: G
         } }
         if (state.phase == TunnelPhase.WAITING) item { Note("启动首页的 MCP 网关后，此隧道会自动连接。其他自定义隧道不受影响。") }
         if (tunnel.enabled && state.phase != TunnelPhase.WAITING) item {
-            OutlinedButton(onClick = { RemoteRuntime.retry(tunnel.id) }, modifier = Modifier.fillMaxWidth()) { Text("重新连接") }
+            SecondaryAction("重新连接", onClick = { RemoteRuntime.retry(tunnel.id) })
         }
         item { SectionLabel("连接信息") }
         item { Group {
@@ -77,7 +75,7 @@ internal fun TunnelScreen(tunnel: TunnelConfig?, state: TunnelStatus, gateway: G
             if (tunnel.target == TunnelTarget.MCP) {
                 if (tunnel.publicUrl.isNotBlank() && gateway.running && gateway.token != null) {
                     GroupDivider()
-                    ActionRow("复制 MCP 客户端配置", "包含本次网关运行的 Token", Icons.Outlined.DataObject, {
+                    ActionRow("复制 MCP 客户端配置", "包含地址与访问 Token", Icons.Outlined.DataObject, {
                         val payload = buildJsonObject { putJsonObject("mcpServers") { putJsonObject(tunnel.name) {
                             put("url", tunnel.publicUrl)
                             putJsonObject("headers") { put("Authorization", "Bearer ${gateway.token}") }
@@ -85,7 +83,7 @@ internal fun TunnelScreen(tunnel: TunnelConfig?, state: TunnelStatus, gateway: G
                         copy("客户端配置", Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), payload))
                     })
                 }
-                GroupDivider(); ActionRow("MCP 访问凭据", "网关重启后需更新客户端 Token", Icons.Outlined.Key, { open("credentials") })
+                GroupDivider(); ActionRow("MCP 访问凭据", "查看或复制 Token", Icons.Outlined.Key, { open("credentials") })
             }
         } }
         item { SectionLabel("管理") }
@@ -98,7 +96,10 @@ internal fun TunnelScreen(tunnel: TunnelConfig?, state: TunnelStatus, gateway: G
         } }
         if (state.events.isNotEmpty()) {
             item { SectionLabel("最近运行记录") }
-            items(state.events) { event -> Group { ActionRow(event, icon = Icons.Outlined.History) } }
+            item { Group { state.events.forEachIndexed { index, event ->
+                if (index > 0) GroupDivider()
+                ActionRow(event, icon = Icons.Outlined.History)
+            } } }
         }
         item { TextButton(onClick = { remove(tunnel.id) }, modifier = Modifier.fillMaxWidth()) { Text("删除隧道", color = MaterialTheme.colorScheme.error) } }
     }
@@ -129,18 +130,14 @@ internal fun TunnelEditor(initial: TunnelConfig, existing: Boolean, config: Remo
         Scaffold(modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding(), contentWindowInsets = WindowInsets(0, 0, 0, 0),
             containerColor = MaterialTheme.colorScheme.background,
             topBar = { TopAppBar(title = { Text(if (existing) "编辑隧道" else "添加隧道") },
-                navigationIcon = { IconButton(onClick = close) { Icon(Icons.Outlined.Close, "关闭编辑") } }, windowInsets = WindowInsets(0, 0, 0, 0)) },
-            bottomBar = { Surface(color = MaterialTheme.colorScheme.surface) {
-                Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), contentAlignment = Alignment.Center) {
-                    Button(onClick = {
+                navigationIcon = { IconButton(onClick = close) { Icon(Icons.Outlined.Close, "关闭编辑") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background), windowInsets = WindowInsets(0, 0, 0, 0)) },
+            bottomBar = { EditorSaveBar("保存隧道") {
                         try {
                             val next = value.copy(name = value.name.trim(), server = value.server.trim(), serverPort = port.toIntOrNull() ?: 0,
                                 localHost = value.localHost.trim(), localPort = localPort.toIntOrNull() ?: 0, remotePort = remotePort.toIntOrNull() ?: 0,
                                 domains = domains.split(Regex("[,，\\s]+")).filter { it.isNotBlank() }, publicUrl = value.publicUrl.trim())
                             next.validate(config.tunnels); save(next)
                         } catch (e: Exception) { error = e.message ?: "保存失败"; scope.launch { list.animateScrollToItem(0) } }
-                    }, modifier = Modifier.widthIn(max = 680.dp).fillMaxWidth().heightIn(min = 50.dp)) { Text("保存隧道") }
-                }
             } }) { padding ->
             Box(Modifier.padding(padding).consumeWindowInsets(padding)) {
                 ScreenList(state = list) {
@@ -208,7 +205,8 @@ internal fun CertificateChoice(label: String, id: String, certificates: List<Tun
 private fun <T> SelectionField(label: String, value: String, choices: List<Pair<T, String>>, change: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        Group { ActionRow(label, value, Icons.Outlined.ExpandMore, { expanded = true }) }
+        Group { ActionRow(label, value, Icons.Outlined.Tune, { expanded = true },
+            trailing = { Icon(Icons.Outlined.ExpandMore, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }) }
         DropdownMenu(expanded, { expanded = false }) { choices.forEach { (key, name) ->
             DropdownMenuItem(text = { Text(name) }, onClick = { change(key); expanded = false })
         } }
