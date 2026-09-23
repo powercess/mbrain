@@ -65,11 +65,9 @@ class FrpcControllerTest {
         } finally { controller.close(); directory.deleteRecursively() }
     }
 
-    @Test fun `custom service survives MCP shutdown and certificate rotation affects only its users`() {
+    @Test fun `custom service survives MCP shutdown and endpoint edits restart only its process`() {
         val directory = Files.createTempDirectory("frpc-independent-test").toFile()
         val binary = File(System.getProperty("java.home"), "bin/" + if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
-        val certificate = testCertificate()
-        val replacement = testCertificate().copy(id = certificate.id)
         val processes = CopyOnWriteArrayList<FakeProcess>()
         val configs = CopyOnWriteArrayList<String>()
         val controller = FrpcController(binary, directory, { _, _ -> }, { _, file ->
@@ -77,25 +75,55 @@ class FrpcControllerTest {
         })
         val mcp = TunnelConfig(name = "mcp", server = "frp.example.com", remotePort = 18081, enabled = true)
         val custom = TunnelConfig(name = "custom", server = "frp.example.com", remotePort = 18082,
-            target = TunnelTarget.CUSTOM, localPort = 8787, plugin = TunnelPlugin.TLS2RAW, certificateId = certificate.id, enabled = true)
+            target = TunnelTarget.CUSTOM, localPort = 8787, enabled = true)
         try {
-            controller.reconcile(listOf(custom, mcp), null, listOf(certificate))
+            controller.reconcile(listOf(custom, mcp), null)
             await { processes.size == 1 }
             val customProcess = processes.single()
-            assertTrue(configs.single().contains("tls2raw"))
-            controller.reconcile(listOf(custom, mcp), 8765, listOf(certificate))
+            assertFalse(configs.single().contains("plugin"))
+            controller.reconcile(listOf(custom, mcp), 8765)
             await { processes.size == 2 }
             val mcpProcess = processes.last()
-            controller.reconcile(listOf(custom, mcp), 8765, listOf(replacement))
+            val replacement = custom.copy(localPort = 8788)
+            controller.reconcile(listOf(replacement, mcp), 8765)
             await { processes.size == 3 }
             assertFalse(customProcess.isAlive)
             assertTrue(mcpProcess.isAlive)
             val replacementProcess = processes.last()
-            controller.reconcile(listOf(custom, mcp), null, listOf(replacement))
+            controller.reconcile(listOf(replacement, mcp), null)
             await { !mcpProcess.isAlive }
             assertTrue(replacementProcess.isAlive)
             controller.close()
             await { processes.none { it.isAlive } && directory.listFiles().orEmpty().isEmpty() }
         } finally { controller.close(); directory.deleteRecursively() }
     }
+    @Test fun `repeated retries retain one error until connection recovers`() {
+        val directory = Files.createTempDirectory("frpc-retry-test").toFile()
+        val binary = File(System.getProperty("java.home"), "bin/" + if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
+        val processes = CopyOnWriteArrayList<FakeProcess>()
+        val states = ConcurrentHashMap<String, TunnelStatus>()
+        val controller = FrpcController(binary, directory, { id, state -> states[id] = state }, { _, _ ->
+            FakeProcess().also { processes.add(it) }
+        })
+        val tunnel = TunnelConfig(name = "retry", server = "frp.example.com", remotePort = 18080, enabled = true)
+        try {
+            controller.reconcile(listOf(tunnel), 8765)
+            await { processes.size == 1 }
+            val process = processes.single()
+            repeat(5) {
+                process.line("try to connect to server")
+                process.line("connect to server error: EOF")
+            }
+            process.line("try to connect to server")
+            process.line("login to server success")
+            await { states[tunnel.id]?.serverConnected == true }
+            val failed = states.getValue(tunnel.id)
+            assertEquals("无法连接服务器，正在重试", failed.error)
+            assertEquals(1, failed.events.count { it == failed.error })
+            process.line("start proxy success")
+            await { states[tunnel.id]?.phase == TunnelPhase.CONNECTED }
+            assertNull(states.getValue(tunnel.id).error)
+        } finally { controller.close(); directory.deleteRecursively() }
+    }
+
 }

@@ -34,7 +34,11 @@ object RemoteRuntime {
     @Synchronized fun saveTunnel(tunnel: TunnelConfig) {
         check(mutableConfig.value.tunnels.none { it.id == tunnel.id && it.enabled }) { "请先关闭此隧道再编辑" }
         val old = mutableConfig.value
-        persist(old.copy(tunnels = old.tunnels.filterNot { it.id == tunnel.id } + tunnel.copy(enabled = false)))
+        old.resolve(tunnel).requireBasicTcp()
+        require(tunnel.serverId.isEmpty() || tunnel.serverId == old.server?.id) { "请使用当前服务器" }
+        val next = old.copy(tunnels = old.tunnels.filterNot { it.id == tunnel.id } + tunnel.copy(enabled = false)).migrateServers()
+        require(next.tunnels.first { it.id == tunnel.id }.serverId == next.server?.id) { "请使用当前服务器" }
+        persist(next)
     }
 
     @Synchronized fun removeTunnel(id: String) {
@@ -43,18 +47,9 @@ object RemoteRuntime {
         refresh()
     }
 
-    @Synchronized fun saveCertificate(certificate: TunnelCertificate) {
-        certificate.validate()
-        val old = mutableConfig.value
-        persist(old.copy(certificates = old.certificates.filterNot { it.id == certificate.id } + certificate))
-        // Replacing a referenced certificate restarts only affected tunnels.
-        refresh()
-    }
+    @Synchronized fun saveServer(server: TunnelServer) { persist(mutableConfig.value.saveServer(server)) }
 
-    @Synchronized fun removeCertificate(id: String) {
-        check(mutableConfig.value.tunnels.none { id in it.certificateIds() }) { "此证书仍被隧道引用，请先修改隧道配置" }
-        persist(mutableConfig.value.copy(certificates = mutableConfig.value.certificates.filterNot { it.id == id }))
-    }
+    @Synchronized fun removeServer(id: String) { persist(mutableConfig.value.removeServer(id)) }
 
     private fun persist(next: RemoteConfig) {
         check(!loadFailed) { "原配置读取失败，不能覆盖；请重新启动应用后重试" }
@@ -66,6 +61,11 @@ object RemoteRuntime {
         check(!loadFailed) { "隧道配置不可用" }
         val old = mutableConfig.value
         check(old.tunnels.any { it.id == id }) { "隧道不存在" }
+        if (enabled) {
+            val tunnel = old.tunnels.first { it.id == id }
+            require(tunnel.serverId == old.server?.id) { "此隧道使用旧服务器，请先编辑并保存隧道" }
+            old.resolve(tunnel).requireBasicTcp()
+        }
         val next = old.copy(tunnels = old.tunnels.map { if (it.id == id) it.copy(enabled = enabled) else it })
         next.validate()
         mutableConfig.value = next
@@ -111,7 +111,7 @@ object RemoteRuntime {
     }
 
     private fun refresh() {
-        controller?.reconcile(mutableConfig.value.tunnels, mcpPort, mutableConfig.value.certificates)
+        controller?.reconcile(mutableConfig.value.tunnels.map(mutableConfig.value::resolve), mcpPort)
         if (mutableConfig.value.tunnels.none { it.enabled } && controller != null) {
             controller?.close(); controller = null
             context.stopService(Intent(context, TunnelService::class.java))

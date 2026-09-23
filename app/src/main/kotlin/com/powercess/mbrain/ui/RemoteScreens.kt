@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.*
 import androidx.compose.ui.unit.dp
 import com.powercess.mbrain.gateway.GatewayStatus
+import com.powercess.mbrain.gateway.GatewayRuntime
 import com.powercess.mbrain.remote.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.*
@@ -30,8 +31,11 @@ internal fun RemoteScreen(config: RemoteConfig, states: Map<String, TunnelStatus
     val failure by RemoteRuntime.error.collectAsState()
     ScreenList(groupedRows = true) {
         failure?.let { item { Note(it, error = true) } }
-        item { Group { ActionRow("证书管理", "导入服务证书、私钥和 CA", Icons.Outlined.VerifiedUser, { open("certificates") }) } }
-        if (config.tunnels.isEmpty()) item { EmptyState("暂无隧道", action = "添加隧道", onAction = add) }
+        item { Group { ActionRow("配置服务器", config.server?.let { "${it.name} · ${it.host}:${it.port}" } ?: "未配置", Icons.Outlined.Dns, { open("servers") }) } }
+        if (config.tunnels.isEmpty()) item { EmptyState("暂无隧道",
+            description = if (config.servers.isEmpty()) "先配置服务器，再添加需要转发的服务" else null,
+            action = if (config.servers.isEmpty()) "配置服务器" else "添加隧道",
+            onAction = if (config.servers.isEmpty()) ({ open("servers") }) else add) }
         else {
             item { ListSection("我的隧道", "${states.values.count { it.phase == TunnelPhase.CONNECTED }} / ${config.tunnels.size} 已注册") }
             groupedItems(config.tunnels, key = { it.id }) { tunnel ->
@@ -56,52 +60,55 @@ private fun TunnelSwitch(tunnel: TunnelConfig, notify: (String) -> Unit) {
 internal fun TunnelScreen(tunnel: TunnelConfig?, state: TunnelStatus, gateway: GatewayStatus, open: (String) -> Unit,
     edit: (String) -> Unit, remove: (String) -> Unit, copy: (String, String) -> Unit, notify: (String) -> Unit) {
     if (tunnel == null) return
+    var more by remember { mutableStateOf(false) }
+    var diagnostics by rememberSaveable(tunnel.id) { mutableStateOf(false) }
+    val target = if (tunnel.target == TunnelTarget.MCP) "MCP 网关 · 127.0.0.1:${gateway.port ?: GatewayRuntime.PORT}" else "${tunnel.localHost}:${tunnel.localPort}"
     ScreenList {
-        item { Group { ActionRow("启用隧道", state.phase.label, Icons.Outlined.Public, trailing = { TunnelSwitch(tunnel, notify) }) } }
+        item { Group { ActionRow("启用隧道", state.phase.label, Icons.Outlined.Public,
+            trailing = { TunnelSwitch(tunnel, notify) }) } }
         state.error?.let { item { Note(it, error = true) } }
-        item { Group {
-            ActionRow("frps 连接", if (state.serverConnected) "已连接" else "未连接", Icons.Outlined.Dns)
-            GroupDivider(); ActionRow("隧道注册", state.phase.label, Icons.Outlined.Link)
-            GroupDivider(); ActionRow("本地服务", state.localHealth.label, Icons.Outlined.PhoneAndroid)
-        } }
-        if (state.phase == TunnelPhase.WAITING) item { Note("启动首页的 MCP 网关后，此隧道会自动连接。其他自定义隧道不受影响。") }
-        if (tunnel.enabled && state.phase != TunnelPhase.WAITING) item {
-            SecondaryAction("重新连接", onClick = { RemoteRuntime.retry(tunnel.id) })
-        }
-        item { SectionLabel("连接信息") }
-        item { Group {
-            ActionRow("公网地址", tunnel.publicUrl.ifBlank { "未填写" }, Icons.Outlined.Link,
-                if (tunnel.publicUrl.isNotBlank()) ({ copy("公网地址", tunnel.publicUrl) }) else null)
-            if (tunnel.target == TunnelTarget.MCP) {
-                if (tunnel.publicUrl.isNotBlank() && gateway.running && gateway.token != null) {
-                    GroupDivider()
-                    ActionRow("复制 MCP 客户端配置", "包含地址与访问 Token", Icons.Outlined.DataObject, {
-                        val payload = buildJsonObject { putJsonObject("mcpServers") { putJsonObject(tunnel.name) {
-                            put("url", tunnel.publicUrl)
-                            putJsonObject("headers") { put("Authorization", "Bearer ${gateway.token}") }
-                        } } }
-                        copy("客户端配置", Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), payload))
-                    })
-                }
-                GroupDivider(); ActionRow("MCP 访问凭据", "查看或复制 Token", Icons.Outlined.Key, { open("credentials") })
+        if (tunnel.accessUrl.isNotBlank()) item { Group {
+            ActionRow("访问地址", tunnel.accessUrl, Icons.Outlined.Link, { copy("访问地址", tunnel.accessUrl) })
+            if (tunnel.target == TunnelTarget.MCP && gateway.running && gateway.token != null) {
+                GroupDivider()
+                ActionRow("复制客户端配置", icon = Icons.Outlined.ContentCopy, onClick = {
+                    val payload = buildJsonObject { putJsonObject("mcpServers") { putJsonObject(tunnel.name) {
+                        put("url", tunnel.accessUrl)
+                        putJsonObject("headers") { put("Authorization", "Bearer ${gateway.token}") }
+                    } } }
+                    copy("客户端配置", payload.toString())
+                })
             }
         } }
-        item { SectionLabel("管理") }
-        item { Group {
-            ActionRow("服务器", "${tunnel.server}:${tunnel.serverPort}", Icons.Outlined.Dns)
-            GroupDivider(); ActionRow("转发方式", "${tunnel.type} · ${tunnel.plugin.label}", Icons.Outlined.SettingsEthernet)
-            GroupDivider(); ActionRow("本地目标", if (tunnel.target == TunnelTarget.MCP) "MBrain MCP" else "${tunnel.localHost}:${tunnel.localPort}", Icons.Outlined.PhoneAndroid)
-            GroupDivider(); ActionRow("公网入口", if (tunnel.type == ProxyType.TCP) "端口 ${tunnel.remotePort}" else tunnel.domains.joinToString(), Icons.Outlined.Language)
-            GroupDivider(); ActionRow("编辑配置", if (tunnel.enabled) "先关闭此隧道" else null, Icons.Outlined.Edit, if (!tunnel.enabled) ({ edit(tunnel.id) }) else null)
+        item { Group { ActionRow("编辑隧道", if (tunnel.enabled) "关闭后可编辑" else "$target · 公网访问端口 ${tunnel.remotePort}",
+            Icons.Outlined.Edit, if (!tunnel.enabled) ({ edit(tunnel.id) }) else null) } }
+        item { Box {
+            TextButton(onClick = { more = true }) { Text("更多"); Icon(Icons.Outlined.ExpandMore, null) }
+            DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                DropdownMenuItem(text = { Text(if (diagnostics) "收起连接详情" else "连接详情") },
+                    onClick = { diagnostics = !diagnostics; more = false })
+                if (tunnel.target == TunnelTarget.MCP) DropdownMenuItem(text = { Text("访问凭据") },
+                    onClick = { more = false; open("credentials") })
+                if (tunnel.enabled && state.phase != TunnelPhase.WAITING) DropdownMenuItem(text = { Text("重新连接") },
+                    onClick = { more = false; RemoteRuntime.retry(tunnel.id) })
+                DropdownMenuItem(text = { Text("删除隧道", color = MaterialTheme.colorScheme.error) },
+                    onClick = { more = false; remove(tunnel.id) })
+            }
         } }
-        if (state.events.isNotEmpty()) {
-            item { SectionLabel("最近运行记录") }
-            item { Group { state.events.forEachIndexed { index, event ->
-                if (index > 0) GroupDivider()
-                ActionRow(event, icon = Icons.Outlined.History)
-            } } }
+        if (diagnostics) {
+            item { Group {
+                ActionRow("服务器", "${tunnel.server}:${tunnel.serverPort}", Icons.Outlined.Dns)
+                GroupDivider(); ActionRow("服务器连接", if (state.serverConnected) "已连接" else "未连接", Icons.Outlined.Link)
+                GroupDivider(); ActionRow("本地服务", state.localHealth.label, Icons.Outlined.PhoneAndroid)
+            } }
+            if (state.events.isNotEmpty()) {
+                item { SectionLabel("最近运行记录") }
+                item { Group { state.events.forEachIndexed { index, event ->
+                    if (index > 0) GroupDivider()
+                    ActionRow(event, icon = Icons.Outlined.History)
+                } } }
+            }
         }
-        item { TextButton(onClick = { remove(tunnel.id) }, modifier = Modifier.fillMaxWidth()) { Text("删除隧道", color = MaterialTheme.colorScheme.error) } }
     }
 }
 
@@ -112,16 +119,12 @@ internal fun TunnelEditor(initial: TunnelConfig, existing: Boolean, config: Remo
     var draft by rememberSaveable { mutableStateOf(json.encodeToString(TunnelConfig.serializer(), initial)) }
     val value = remember(draft) { json.decodeFromString(TunnelConfig.serializer(), draft) }
     fun update(next: TunnelConfig) { draft = json.encodeToString(TunnelConfig.serializer(), next) }
-    var port by rememberSaveable { mutableStateOf(initial.serverPort.toString()) }
     var localPort by rememberSaveable { mutableStateOf(initial.localPort.toString()) }
     var remotePort by rememberSaveable { mutableStateOf(initial.remotePort.takeIf { it > 0 }?.toString().orEmpty()) }
-    var domains by rememberSaveable { mutableStateOf(initial.domains.joinToString(", ")) }
-    var reveal by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var discard by rememberSaveable { mutableStateOf(false) }
-    var advanced by rememberSaveable { mutableStateOf(false) }
-    val dirty = value != initial.copy(enabled = false) || port != initial.serverPort.toString() || localPort != initial.localPort.toString() ||
-        remotePort != initial.remotePort.takeIf { it > 0 }?.toString().orEmpty() || domains != initial.domains.joinToString(", ")
+    val dirty = value != initial.copy(enabled = false) || localPort != initial.localPort.toString() ||
+        remotePort != initial.remotePort.takeIf { it > 0 }?.toString().orEmpty()
     val close = { if (dirty) discard = true else dismiss() }
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -133,53 +136,36 @@ internal fun TunnelEditor(initial: TunnelConfig, existing: Boolean, config: Remo
                 navigationIcon = { IconButton(onClick = close) { Icon(Icons.Outlined.Close, "关闭编辑") } }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background), windowInsets = WindowInsets(0, 0, 0, 0)) },
             bottomBar = { EditorSaveBar("保存隧道") {
                         try {
-                            val next = value.copy(name = value.name.trim(), server = value.server.trim(), serverPort = port.toIntOrNull() ?: 0,
-                                localHost = value.localHost.trim(), localPort = localPort.toIntOrNull() ?: 0, remotePort = remotePort.toIntOrNull() ?: 0,
-                                domains = domains.split(Regex("[,，\\s]+")).filter { it.isNotBlank() }, publicUrl = value.publicUrl.trim())
-                            next.validate(config.tunnels); save(next)
+                            val next = value.asBasicTcp().referenceServer(config.server?.id.orEmpty()).copy(name = value.name.trim(),
+                                localHost = if (value.target == TunnelTarget.MCP) "127.0.0.1" else value.localHost.trim(),
+                                localPort = if (value.target == TunnelTarget.MCP) GatewayRuntime.PORT else localPort.toIntOrNull() ?: 0, remotePort = remotePort.toIntOrNull() ?: 0,
+                                publicUrl = value.publicUrl.trim())
+                            require(next.serverId.isNotEmpty()) { "请先配置服务器" }
+                            config.copy(tunnels = config.tunnels.filterNot { it.id == next.id } + next).validate()
+                            save(next.referenceServer(next.serverId))
                         } catch (e: Exception) { error = e.message ?: "保存失败"; scope.launch { list.animateScrollToItem(0) } }
             } }) { padding ->
             Box(Modifier.padding(padding).consumeWindowInsets(padding)) {
                 ScreenList(state = list) {
                     error?.let { item(key = "error") { Note(it, error = true) } }
+                    if (!initial.supportsBasicTcp() || (initial.serverId.isNotEmpty() && initial.serverId != config.server?.id))
+                        item(key = "legacy") { Note("保存后将使用当前服务器和基础 TCP 转发，请确认公网访问端口。") }
                     item(key = "name") { TunnelField("名称", value.name, { update(value.copy(name = it)); error = null }) }
                     item(key = "target-label") { SectionLabel("本地目标") }
                     item(key = "target") { ChoiceRow(TunnelTarget.entries, value.target, { if (it == TunnelTarget.MCP) "本应用 MCP" else "自定义服务" }) {
-                        update(value.copy(target = it, plugin = if (it == TunnelTarget.MCP && value.type == ProxyType.HTTPS) TunnelPlugin.HTTPS2HTTP else value.plugin))
+                        update(value.copy(target = it))
                     } }
+                    if (value.target == TunnelTarget.MCP) {
+                        item(key = "mcp-endpoint") { Note("转发本机 MCP 网关：127.0.0.1:${GatewayRuntime.PORT}") }
+                    }
                     if (value.target == TunnelTarget.CUSTOM) {
                         item(key = "local-host") { TunnelField("本地服务地址", value.localHost, { update(value.copy(localHost = it)) }, KeyboardType.Uri) }
                         item(key = "local-port") { TunnelField("本地服务端口", localPort, { localPort = it }, KeyboardType.Number) }
                     }
-                    item(key = "server-label") { SectionLabel("frps 服务器") }
-                    item(key = "server") { TunnelField("服务器地址", value.server, { update(value.copy(server = it)) }, KeyboardType.Uri) }
-                    item(key = "port") { TunnelField("服务器端口", port, { port = it }, KeyboardType.Number) }
-                    item(key = "token") { OutlinedTextField(value.token, { update(value.copy(token = it)) }, Modifier.fillMaxWidth(), label = { Text("服务器 Token（可选）") },
-                        singleLine = true, shape = MaterialTheme.shapes.medium, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        visualTransformation = if (reveal) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = { IconButton(onClick = { reveal = !reveal }) { Icon(if (reveal) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, "显示或隐藏 Token") } }) }
-                    item(key = "proxy-label") { SectionLabel("公网入口") }
-                    item(key = "type") { ChoiceRow(ProxyType.entries, value.type, { it.name }) {
-                        update(value.copy(type = it, plugin = if (it == ProxyType.HTTPS && value.target == TunnelTarget.MCP) TunnelPlugin.HTTPS2HTTP else TunnelPlugin.NONE))
-                    } }
-                    if (value.type == ProxyType.TCP) item(key = "remote-port") { TunnelField("映射端口", remotePort, { remotePort = it }, KeyboardType.Number) }
-                    else item(key = "domains") { TunnelField("域名（多个用逗号分隔）", domains, { domains = it }, KeyboardType.Uri, "phone.example.com") }
-                    item(key = "plugin") { SelectionField("客户端插件", value.plugin.label,
-                        TunnelPlugin.entries.filter { value.type == ProxyType.TCP || it != TunnelPlugin.TLS2RAW }.map { it to it.label }) { update(value.copy(plugin = it)) } }
-                    if (value.plugin != TunnelPlugin.NONE) {
-                        item(key = "certificate") { CertificateChoice("服务证书与私钥", value.certificateId, config.certificates.filter { it.keyPem.isNotBlank() }) { update(value.copy(certificateId = it)) } }
-                        item(key = "certificate-help") { Note("请先在内网穿透 → 证书管理中导入证书与私钥。") }
-                    }
-                    if (value.plugin == TunnelPlugin.HTTPS2HTTP) item(key = "host-header") { TunnelField("重写 Host（可选）", value.hostHeaderRewrite, { update(value.copy(hostHeaderRewrite = it)) }) }
-                    item(key = "public-url") { TunnelField("公网访问地址（可选）", value.publicUrl, { update(value.copy(publicUrl = it)) }, KeyboardType.Uri,
-                        if (value.target == TunnelTarget.MCP) "https://phone.example.com/mcp" else "https://phone.example.com") }
-                    item(key = "advanced") { Group { ActionRow("frps 连接 TLS", "已启用加密 · 配置 CA 或双向认证", Icons.Outlined.Lock, { advanced = !advanced }) } }
-                    if (advanced) {
-                        item(key = "tls-help") { Note("此处配置 frpc 到 frps 的连接，与公网服务证书独立。未选择 CA 时沿用 frp 默认行为，不校验 frps 证书身份。") }
-                        item(key = "tls-ca") { CertificateChoice("信任的 CA（可选）", value.tlsCaId, config.certificates) { update(value.copy(tlsCaId = it)) } }
-                        item(key = "tls-name") { TunnelField("TLS 服务器名称（可选）", value.tlsServerName, { update(value.copy(tlsServerName = it)) }) }
-                        item(key = "tls-client") { CertificateChoice("客户端证书（可选）", value.tlsClientCertificateId, config.certificates.filter { it.keyPem.isNotBlank() }) { update(value.copy(tlsClientCertificateId = it)) } }
-                    }
+                    item(key = "remote-port") { TunnelField("公网访问端口", remotePort, { remotePort = it }, KeyboardType.Number) }
+                    item(key = "public-url") { TunnelField("自定义公网地址（可选）", value.publicUrl, { update(value.copy(publicUrl = it)) }, KeyboardType.Uri,
+                        if (value.target == TunnelTarget.MCP) value.copy(server = config.server?.host.orEmpty(), remotePort = remotePort.toIntOrNull() ?: 0, publicUrl = "").accessUrl else "http://phone.example.com:18080") }
+
                 }
             }
         }
@@ -194,23 +180,6 @@ private fun <T> ChoiceRow(values: List<T>, selected: T, label: (T) -> String, ch
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) { values.forEachIndexed { index, option ->
         SegmentedButton(selected == option, { change(option) }, SegmentedButtonDefaults.itemShape(index, values.size)) { Text(label(option)) }
     } }
-}
-
-@Composable
-internal fun CertificateChoice(label: String, id: String, certificates: List<TunnelCertificate>, change: (String) -> Unit) {
-    SelectionField(label, certificates.find { it.id == id }?.name ?: "未选择", listOf("" to "不使用") + certificates.map { it.id to it.name }, change)
-}
-
-@Composable
-private fun <T> SelectionField(label: String, value: String, choices: List<Pair<T, String>>, change: (T) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        Group { ActionRow(label, value, Icons.Outlined.Tune, { expanded = true },
-            trailing = { Icon(Icons.Outlined.ExpandMore, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }) }
-        DropdownMenu(expanded, { expanded = false }) { choices.forEach { (key, name) ->
-            DropdownMenuItem(text = { Text(name) }, onClick = { change(key); expanded = false })
-        } }
-    }
 }
 
 @Composable

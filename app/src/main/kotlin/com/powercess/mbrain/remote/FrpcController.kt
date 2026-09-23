@@ -16,7 +16,7 @@ class FrpcController(
     },
 ) : AutoCloseable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private class Entry(val config: TunnelConfig, val endpoint: Pair<String, Int>, val certificates: List<TunnelCertificate>) {
+    private class Entry(val config: TunnelConfig, val endpoint: Pair<String, Int>) {
         var process: Process? = null
         lateinit var job: Job
         var status = TunnelStatus(TunnelPhase.CONNECTING)
@@ -24,19 +24,18 @@ class FrpcController(
     private val entries = mutableMapOf<String, Entry>()
     private var closed = false
 
-    @Synchronized fun reconcile(configs: List<TunnelConfig>, port: Int?, certificates: List<TunnelCertificate> = emptyList()) {
+    @Synchronized fun reconcile(configs: List<TunnelConfig>, port: Int?) {
         if (closed) return
         val desired = configs.filter { it.enabled && it.endpoint(port) != null }.associateBy { it.id }
         entries.keys.toList().forEach { id ->
             val entry = entries.getValue(id)
-            if (desired[id] != entry.config || desired[id]?.endpoint(port) != entry.endpoint ||
-                certificates.filter { it.id in entry.config.certificateIds() } != entry.certificates) stop(id)
+            if (desired[id] != entry.config || desired[id]?.endpoint(port) != entry.endpoint) stop(id)
         }
         configs.forEach { config ->
             val endpoint = config.endpoint(port)
             if (!config.enabled || endpoint == null) changed(config.id, TunnelStatus(if (config.enabled) TunnelPhase.WAITING else TunnelPhase.OFF))
             else if (config.id !in entries) {
-                val entry = Entry(config, endpoint, certificates.filter { it.id in config.certificateIds() })
+                val entry = Entry(config, endpoint)
                 entry.job = scope.launch(start = CoroutineStart.LAZY) { supervise(entry) }
                 entries[config.id] = entry
                 changed(config.id, entry.status)
@@ -57,6 +56,9 @@ class FrpcController(
 
     @Synchronized private fun publish(entry: Entry, phase: TunnelPhase, error: String? = null) {
         if (entries[entry.config.id] !== entry) return
+        // A new connection attempt does not resolve the preceding failure. Keep its reason
+        // until the state changes, rather than alternating error/retry rows on every attempt.
+        if (phase == TunnelPhase.RETRYING && entry.status.phase == TunnelPhase.RETRYING && error == null) return
         if (entry.status.phase == phase && entry.status.error == error) return
         entry.status = entry.status.copy(phase = phase, error = error, events = (listOf(error ?: phase.label) + entry.status.events).take(40),
             serverConnected = when (phase) { TunnelPhase.CONNECTED -> true; TunnelPhase.ERROR -> entry.status.serverConnected; else -> false })
@@ -80,13 +82,7 @@ class FrpcController(
                 check(executable.isFile && executable.canExecute()) { "此设备的 frpc 不可用" }
                 directory.mkdirs()
                 attemptDirectory = java.nio.file.Files.createTempDirectory(directory.toPath(), "frpc-").toFile()
-                val paths = entry.certificates.associate { certificate ->
-                    certificate.validate()
-                    certificate.id to CertificatePaths(
-                        privateFile(attemptDirectory, "${certificate.id}.crt", certificate.pem).absolutePath,
-                        certificate.keyPem.takeIf { it.isNotBlank() }?.let { privateFile(attemptDirectory, "${certificate.id}.key", it).absolutePath })
-                }
-                val configFile = privateFile(attemptDirectory, "frpc.json", entry.config.frpcConfig(entry.endpoint, paths))
+                val configFile = privateFile(attemptDirectory, "frpc.json", entry.config.frpcConfig(entry.endpoint))
                 currentCoroutineContext().ensureActive()
                 synchronized(this) {
                     if (entries[entry.config.id] !== entry) throw CancellationException()

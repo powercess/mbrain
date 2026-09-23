@@ -43,7 +43,7 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
     var themePicker by rememberSaveable { mutableStateOf(false) }
     var removal by rememberSaveable { mutableStateOf<String?>(null) }
     var tunnelEditor by rememberSaveable { mutableStateOf<String?>(null) }
-    var certificateEditor by rememberSaveable { mutableStateOf<String?>(null) }
+    var serverEditor by rememberSaveable { mutableStateOf<String?>(null) }
     var remoteRemoval by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -65,11 +65,10 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
         route == "activity" -> "运行记录"
         route == "about" -> "关于 MBrain"
         route == "remote" -> "内网穿透"
-        route == "certificates" -> "证书管理"
         route.startsWith("tunnel:") -> remote.tunnels.find { it.id == route.substringAfter(':') }?.name ?: "隧道详情"
         else -> "使用说明"
     }
-    BackHandler(stack.size > 1 && editor == null && tunnelEditor == null && certificateEditor == null) { back() }
+    BackHandler(stack.size > 1 && editor == null && tunnelEditor == null && serverEditor == null) { back() }
     LaunchedEffect(status.error) { status.error?.let { snackbar.showSnackbar(it) } }
     val holder = rememberSaveableStateHolder()
     MBrainTheme(dark) {
@@ -108,11 +107,16 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
                             key == "activity" -> ActivityScreen(status)
                             key == "about" -> AboutScreen()
                             key == "help" -> HelpScreen(status, copy)
-                            key == "remote" -> RemoteScreen(remote, tunnelStates, open, { tunnelEditor = "new" }, notify)
-                            key == "certificates" -> CertificatesScreen(remote.certificates, { certificateEditor = it }, { remoteRemoval = "certificate:$it" })
+                            key == "remote" -> RemoteScreen(remote, tunnelStates, { destination ->
+                                if (destination == "servers") serverEditor = remote.server?.id ?: "new" else open(destination)
+                            }, {
+                                if (remote.server == null) serverEditor = "new" else tunnelEditor = "new"
+                            }, notify)
                             key.startsWith("tunnel:") -> {
                                 val id = key.substringAfter(':')
-                                TunnelScreen(remote.tunnels.find { it.id == id }, tunnelStates[id] ?: TunnelStatus(), status, open,
+                                TunnelScreen(remote.tunnels.find { it.id == id }?.let(remote::resolve), tunnelStates[id] ?: TunnelStatus(), status, { destination ->
+                                        if (destination == "servers") serverEditor = remote.server?.id ?: "new" else open(destination)
+                                    },
                                     { tunnelEditor = it }, { remoteRemoval = "tunnel:$it" }, copy, notify)
                             }
                         }
@@ -149,26 +153,26 @@ fun MBrainApp(start: () -> Unit, stop: () -> Unit) {
         }
 
         tunnelEditor?.let { editorKey -> key("tunnel-editor:$editorKey") {
-            val initial = remember(editorKey) { if (editorKey == "new") TunnelConfig() else remote.tunnels.find { it.id == editorKey } }
+            val initial = remember(editorKey) { if (editorKey == "new") TunnelConfig(serverId = remote.server?.id.orEmpty()) else remote.tunnels.find { it.id == editorKey } }
             if (initial != null) TunnelEditor(initial, editorKey != "new", remote, { tunnelEditor = null }) { next ->
                 RemoteRuntime.saveTunnel(next); tunnelEditor = null
                 if (editorKey == "new") open("tunnel:${next.id}")
                 notify("已保存隧道")
             }
         } }
-        certificateEditor?.let { editorKey -> key("certificate-editor:$editorKey") {
-            val initial = remember(editorKey) { if (editorKey == "new") TunnelCertificate() else remote.certificates.find { it.id == editorKey } }
-            if (initial != null) CertificateEditor(initial, { certificateEditor = null }) { next ->
-                RemoteRuntime.saveCertificate(next); certificateEditor = null; notify("已保存证书")
+        serverEditor?.let { editorKey -> key("server-editor:$editorKey") {
+            val initial = remember(editorKey) { if (editorKey == "new") TunnelServer() else remote.servers.find { it.id == editorKey } }
+            if (initial != null) ServerEditor(initial, editorKey != "new", remote, { serverEditor = null }, { remoteRemoval = "server:${initial.id}" }) { next ->
+                RemoteRuntime.saveServer(next); serverEditor = null; notify("已保存服务器")
             }
         } }
         remoteRemoval?.let { target ->
-            AlertDialog(onDismissRequest = { remoteRemoval = null }, title = { Text(if (target.startsWith("tunnel:")) "删除此隧道？" else "删除此证书？") },
-                text = { Text(if (target.startsWith("tunnel:")) "此隧道会停止并移除配置。" else "仍被隧道引用的证书不能删除。") },
+            AlertDialog(onDismissRequest = { remoteRemoval = null }, title = { Text(if (target.startsWith("tunnel:")) "删除此隧道？" else "删除此服务器？") },
+                text = { Text(if (target.startsWith("tunnel:")) "此隧道会停止并移除配置。" else "删除已保存的服务器配置，之后可重新添加。") },
                 confirmButton = { TextButton(onClick = {
                     runCatching {
                         if (target.startsWith("tunnel:")) { RemoteRuntime.removeTunnel(target.substringAfter(':')); back() }
-                        else RemoteRuntime.removeCertificate(target.substringAfter(':'))
+                        else { RemoteRuntime.removeServer(target.substringAfter(':')); serverEditor = null }
                     }.onFailure { notify(it.message ?: "删除失败") }
                     remoteRemoval = null
                 }) { Text("删除") } }, dismissButton = { TextButton(onClick = { remoteRemoval = null }) { Text("取消") } })
