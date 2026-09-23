@@ -2,6 +2,7 @@ package com.powercess.mbrain.remote
 
 import org.junit.Assert.*
 import org.junit.Test
+import kotlinx.coroutines.runBlocking
 import java.io.*
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
@@ -62,7 +63,7 @@ class FrpcControllerTest {
             await { processes.none { it.isAlive } && directory.listFiles().orEmpty().isEmpty() }
             Thread.sleep(1100)
             assertEquals(4, processes.size)
-        } finally { controller.close(); directory.deleteRecursively() }
+        } finally { controller.close(); runBlocking { controller.awaitTermination() }; directory.deleteRecursively() }
     }
 
     @Test fun `custom service survives MCP shutdown and endpoint edits restart only its process`() {
@@ -95,7 +96,7 @@ class FrpcControllerTest {
             assertTrue(replacementProcess.isAlive)
             controller.close()
             await { processes.none { it.isAlive } && directory.listFiles().orEmpty().isEmpty() }
-        } finally { controller.close(); directory.deleteRecursively() }
+        } finally { controller.close(); runBlocking { controller.awaitTermination() }; directory.deleteRecursively() }
     }
     @Test fun `repeated retries retain one error until connection recovers`() {
         val directory = Files.createTempDirectory("frpc-retry-test").toFile()
@@ -123,7 +124,7 @@ class FrpcControllerTest {
             process.line("start proxy success")
             await { states[tunnel.id]?.phase == TunnelPhase.CONNECTED }
             assertNull(states.getValue(tunnel.id).error)
-        } finally { controller.close(); directory.deleteRecursively() }
+        } finally { controller.close(); runBlocking { controller.awaitTermination() }; directory.deleteRecursively() }
     }
 
 }
