@@ -162,7 +162,7 @@ HTTP 服务目前只支持回环地址。托管进程所需的程序和运行环
 
 遇到问题或有功能建议，欢迎通过 [Issue 模板](https://github.com/powercess/mbrain/issues/new/choose)反馈。描述问题时请附上版本和复现步骤；截图或日志中请隐去 Token 与私人信息。
 
-欢迎通过 Pull Request 改进项目。请从默认分支 `dev` 创建功能分支，再提交 PR 到 `dev`；`dev` 和 `main` 均不接受直接推送。发布时由 `dev` 提交 PR 到 `main`，版本 tag 触发正式发布。构建与测试说明见[开发指南](docs/development.md)。
+Contributions through bug reports, documentation improvements, and code are welcome. Read the [contributing guide](CONTRIBUTING.md) for local setup, building and running the app, validation, and the pull request workflow. Start each contribution on a dedicated branch based on the latest `dev` and target `dev` in your pull request. For detailed device testing, see the [development guide](docs/development.md).
 
 ## 致谢
 
