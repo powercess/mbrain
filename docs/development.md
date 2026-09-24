@@ -51,7 +51,9 @@ GitHub Actions 在 push、PR 和手动触发时使用 Ubuntu 24.04、JDK 17、An
 
 通用 APK 覆盖 `arm64-v8a`、`armeabi-v7a`、`x86_64` 和 `x86`，最低 Android 9.0。CI 检查 APK 中每个原生库是否同时包含四种 ABI；当前原生库来自 AndroidX 依赖。无需按 CPU 下载不同文件。该检查验证打包完整性，不代表四种架构都已进行运行测试。设备上的外部 MCP 程序需要另行匹配设备架构。
 
-自动构建使用临时 Debug 签名和 `com.powercess.mbrain.debug` 包名，仅用于测试，可与正式版并存。不同运行的 Debug 签名可能不同，不能保证覆盖安装同名测试包。正式版固定使用 `com.powercess.mbrain` 和正式签名。早期临时版本曾使用正式包名与 Debug 签名，无法直接覆盖为正式版；卸载会清除配置，操作前需保存需要保留的连接设置。
+本地开发与普通 Debug 构建固定使用 `com.powercess.mbrain.dev`，桌面显示“MBrain 开发版”，版本号显示为 `版本号-dev`。包名不随版本号或开发任务改变，不再通过临时 init 脚本改成 `controlqa` 等名称。后续本地构建使用同一份 Debug keystore，并以 `adb install -r` 覆盖更新，保留配置。
+
+CI 使用临时 Debug 签名，签名可能与本地不同，不能保证覆盖安装同名开发包。正式版固定使用 `com.powercess.mbrain` 和正式签名。已有旧测试包不会自动迁移或卸载；签名冲突时应先确认安装来源，不通过不断更换包名解决。卸载会清除配置。
 
 验证首次克隆时，在新目录克隆后设置标准 `JAVA_HOME`、`ANDROID_HOME` 和全新的 `GRADLE_USER_HOME`，运行 `./gradlew :app:assembleDebug testDebugUnitTest :app:lintDebug --no-build-cache --max-workers=1 --no-parallel --no-watch-fs`。Windows 使用 `gradlew.bat`。不复制旧目录的 `local.properties`、`.local-tools`、`.gradle` 或 `build`。
 
@@ -69,6 +71,8 @@ Shizuku 通过 root 启动时可以返回 UID 0，通过 ADB 启动时一般是 
 KernelSU 等管理器可能对未授权应用隐藏 `su`，需在管理器中单独允许 MBrain；其他应用已获 root 不代表 MBrain 已授权。
 
 ## 当前工具
+
+0.3.0 新增手机操作包与应用诊断包，完整参数和设备测试见[能力包说明](capability-packs.md)。两组工具随 Root / Shizuku 来源启用，不需要额外安装自动化引擎。
 
 | 来源 | 工具 |
 |---|---|
