@@ -4,6 +4,7 @@ import android.content.Context
 import com.powercess.mbrain.data.*
 import com.powercess.mbrain.mcp.*
 import com.powercess.mbrain.shell.*
+import com.powercess.mbrain.control.PhoneTools
 import com.powercess.mbrain.remote.SecretStore
 import io.droidmcp.apps.AppsTools
 import io.droidmcp.core.*
@@ -217,6 +218,8 @@ object GatewayRuntime {
                 add(ShellCommandTool(backend, prefix))
                 addAll(ShellTools.all(context, backend).filterNot { it.name == "run_shell" }.map { NamedTool(it, prefix) })
                 addAll(FileOperationTool.all(backend, prefix))
+                addAll(PhoneTools.all(backend, context.applicationInfo.sourceDir).map { NamedTool(it, prefix) })
+                addAll(DiagnosticTools.all(backend).map { NamedTool(it, prefix) })
             }
         }
     }

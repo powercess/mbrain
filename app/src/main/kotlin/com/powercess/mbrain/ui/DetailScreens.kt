@@ -19,6 +19,12 @@ private val toolLabels = mapOf(
     "list_installed_apps" to "应用列表", "get_app_info" to "应用详情", "launch_app" to "启动应用", "exec" to "执行命令",
     "file_list" to "浏览目录", "file_read" to "读取文件", "file_write" to "写入文件", "file_mkdir" to "创建目录",
     "file_copy" to "复制文件", "file_move" to "移动文件", "file_delete" to "删除文件",
+    "ui_dump" to "读取控件树", "ui_click" to "点击控件", "ui_long_click" to "长按控件",
+    "ui_set_text" to "输入文本", "ui_swipe" to "滑动屏幕", "ui_navigate" to "系统导航", "ui_wait" to "等待控件",
+    "clipboard_get" to "读取剪贴板", "clipboard_set" to "写入剪贴板",
+    "logs_query" to "查询日志", "appops_get" to "查询 AppOps", "appops_set" to "修改 AppOps",
+    "proc_list" to "进程列表", "app_resource_usage" to "应用资源占用",
+    "net_status" to "网络状态", "net_diagnose" to "网络诊断",
 )
 internal fun toolTitle(name: String): String = toolLabels[name.removePrefix("root_").removePrefix("shizuku_")] ?: name
 
