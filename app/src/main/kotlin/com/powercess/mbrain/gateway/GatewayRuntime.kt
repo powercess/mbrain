@@ -6,6 +6,7 @@ import com.powercess.mbrain.mcp.*
 import com.powercess.mbrain.shell.*
 import com.powercess.mbrain.control.PhoneTools
 import com.powercess.mbrain.remote.SecretStore
+import com.powercess.mbrain.capability.*
 import io.droidmcp.apps.AppsTools
 import io.droidmcp.core.*
 import io.droidmcp.device.DeviceTools
@@ -208,6 +209,7 @@ object GatewayRuntime {
                 readOnly = false, fallbackToDynamicPort = true).build()
     }
     private fun localTools(): List<McpTool> = buildList {
+        val capabilityProviders = mutableMapOf<ProviderKind, MutableMap<String, McpTool>>()
         addAll(DeviceTools.all(context))
         if (config.value.appsEnabled) addAll(AppsTools.all(context))
         listOf(ExecutionMode.ROOT, ExecutionMode.SHIZUKU).forEach { mode ->
@@ -218,10 +220,33 @@ object GatewayRuntime {
                 add(ShellCommandTool(backend, prefix))
                 addAll(ShellTools.all(context, backend).filterNot { it.name == "run_shell" }.map { NamedTool(it, prefix) })
                 addAll(FileOperationTool.all(backend, prefix))
-                addAll(PhoneTools.all(backend, context.applicationInfo.sourceDir).map { NamedTool(it, prefix) })
-                addAll(DiagnosticTools.all(backend).map { NamedTool(it, prefix) })
+                val phone = PhoneTools.all(backend, context.applicationInfo.sourceDir)
+                val diagnostic = DiagnosticTools.all(backend)
+                addAll(phone.map { NamedTool(it, prefix) })
+                addAll(diagnostic.map { NamedTool(it, prefix) })
+                val provider = if (mode == ExecutionMode.ROOT) ProviderKind.ROOT else ProviderKind.SHIZUKU
+                capabilityProviders.getOrPut(provider) { mutableMapOf() }.putAll((phone + diagnostic).associateBy { it.name })
             }
         }
+        val definitions = listOf(
+            CapabilityDefinition("ui_dump", "Read the active UI tree", "read", listOf(ProviderKind.SPECIAL_ACCESS, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("ui_click", "Click a visible UI node", "write", listOf(ProviderKind.SPECIAL_ACCESS, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("ui_long_click", "Long-click a visible UI node", "write", listOf(ProviderKind.SPECIAL_ACCESS, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("ui_set_text", "Enter text into a UI field", "write", listOf(ProviderKind.SPECIAL_ACCESS, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("ui_swipe", "Swipe on the default display", "write", listOf(ProviderKind.SPECIAL_ACCESS, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("ui_navigate", "Navigate Android system UI", "write", listOf(ProviderKind.SPECIAL_ACCESS, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("ui_wait", "Wait for a UI node", "read", listOf(ProviderKind.SPECIAL_ACCESS, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("clipboard_get", "Read the current clipboard", "read", listOf(ProviderKind.APP, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("clipboard_set", "Set the current clipboard", "write", listOf(ProviderKind.APP, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("logs_query", "Query device logs", "read", listOf(ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("appops_get", "Read AppOps state", "read", listOf(ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("appops_set", "Change AppOps state", "dangerous", listOf(ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("proc_list", "List running processes", "read", listOf(ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("app_resource_usage", "Read process resource usage", "read", listOf(ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("net_status", "Read network status", "read", listOf(ProviderKind.APP, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+            CapabilityDefinition("net_diagnose", "Diagnose DNS and TCP connectivity", "read", listOf(ProviderKind.APP, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
+        )
+        addAll(CapabilityDispatcher(definitions, capabilityProviders).tools())
     }
     private fun refreshTools() {
         val current = server ?: return
