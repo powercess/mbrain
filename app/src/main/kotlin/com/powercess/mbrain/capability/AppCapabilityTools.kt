@@ -48,9 +48,9 @@ object AppCapabilityTools {
             val manager = context.getSystemService(ConnectivityManager::class.java)
             val network = manager?.activeNetwork
             val caps = network?.let { manager.getNetworkCapabilities(it) }
-            return ToolResult.success(mapOf("available" to (network != null), "validated" to (caps?.hasCapability(16) == true),
-                "wifi" to (caps?.hasTransport(1) == true), "cellular" to (caps?.hasTransport(0) == true),
-                "vpn" to (caps?.hasTransport(4) == true), "api" to Build.VERSION.SDK_INT, "source" to "app"))
+            return ToolResult.success(mapOf("available" to (network != null), "validated" to (caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true),
+                "wifi" to (caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true), "cellular" to (caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true),
+                "vpn" to (caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true), "api" to Build.VERSION.SDK_INT, "source" to "app"))
         }
     }
 }
