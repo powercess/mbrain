@@ -4,180 +4,187 @@
 
 # MBrain
 
-**让 AI Agent 调用你的 Android 手机能力。**
+**An Android MCP gateway for AI agent device control.**
 
-设备信息 · 应用管理 · 文件操作 · Root / Shizuku · MCP 服务聚合
+Device information · App management · File operations · Root / Shizuku · MCP service aggregation
 
 <p>
-  <img src="https://img.shields.io/badge/Android-9.0%2B-3DDC84?style=flat-square&amp;logo=android&amp;logoColor=white" alt="Android 9.0 及以上" />
+  <img src="https://img.shields.io/badge/Android-9.0%2B-3DDC84?style=flat-square&amp;logo=android&amp;logoColor=white" alt="Android 9.0 or later" />
   <img src="https://img.shields.io/badge/MCP-HTTP-5E6AD2?style=flat-square" alt="HTTP MCP" />
-  <a href="https://github.com/powercess/mbrain/releases/latest"><img src="https://img.shields.io/github/v/release/powercess/mbrain?style=flat-square&amp;color=14756A" alt="最新版本" /></a>
+  <a href="https://github.com/powercess/mbrain/releases/latest"><img src="https://img.shields.io/github/v/release/powercess/mbrain?style=flat-square&amp;color=14756A" alt="Latest release" /></a>
 </p>
 
-[快速上手](#快速上手) · [连接 Agent](#连接-agent) · [接入 MCP 服务](#接入-mcp-服务) · [常见问题](#常见问题) · [反馈问题](https://github.com/powercess/mbrain/issues)
+[简体中文](README.zh_CN.md) | [繁體中文](README.zh_TW.md) | **English** | [Français](README.fr.md) | [日本語](README.ja.md)
+
+[Quick start](#quick-start) · [Connect an agent](#connect-an-ai-agent) · [Add MCP services](#add-mcp-services) · [FAQ](#faq) · [Report an issue](https://github.com/powercess/mbrain/issues)
 
 </div>
 
 ---
 
-MBrain 是运行在 Android 上的 MCP 网关。它把手机自身的能力和你接入的 MCP 服务汇集到一个入口，让支持 MCP 的 AI 客户端读取设备状态、管理应用、操作文件或执行命令。你可以在手机上选择开放哪些能力，并随时停止服务。
+MBrain is an Android gateway for the Model Context Protocol (MCP) that lets AI agents access device information, manage apps, operate files, execute commands, and connect to additional MCP services through one unified endpoint. Enable only the capabilities you need and stop the gateway at any time.
 
-## 界面预览
+## Screenshots
 
 <table>
   <tr>
-    <th align="center">首页</th>
-    <th align="center">能力管理</th>
-    <th align="center">设置</th>
+    <th align="center">Home</th>
+    <th align="center">Capabilities</th>
+    <th align="center">Settings</th>
   </tr>
   <tr>
-    <td><img src="assets/screenshots/home.png" width="240" alt="首页：工具与服务概览，右下角悬浮启停按钮" /></td>
-    <td><img src="assets/screenshots/capabilities.png" width="240" alt="能力管理：按需启用 Root、Shizuku 和应用管理" /></td>
-    <td><img src="assets/screenshots/settings.png" width="240" alt="设置：连接凭据、外观和运行记录" /></td>
+    <td><img src="assets/screenshots/home.png" width="240" alt="Home screen with tools, services, and gateway control" /></td>
+    <td><img src="assets/screenshots/capabilities.png" width="240" alt="Capability management for Root, Shizuku, and apps" /></td>
+    <td><img src="assets/screenshots/settings.png" width="240" alt="Settings for credentials, appearance, and runtime logs" /></td>
   </tr>
 </table>
 
-<sub>应用实际运行截图。可用工具数量取决于已启用能力和接入服务；支持浅色、深色及跟随系统。</sub>
+<sub>Screenshots from the running app. Available tools depend on enabled capabilities and connected services. Light, dark, and system themes are supported.</sub>
 
-## 可以做什么
+## Features
 
-| 能力 | 用途 |
+| Capability | What it provides |
 | --- | --- |
-| **读取设备状态** | 查看设备信息、电量、存储空间和网络状态 |
-| **管理应用** | 查看应用列表与详情、启动应用；高权限通道还可安装、卸载和停止应用 |
-| **执行命令与操作文件** | 通过 Root 或 Shizuku 执行命令，浏览、读取、写入、复制和移动文件 |
-| **接入其他 MCP 服务** | 添加手机本机的 HTTP MCP 服务，或由 MBrain 启动和管理 stdio MCP 进程 |
-| **统一管理与连接** | 一个 MCP 地址提供工具目录，支持搜索工具、查看说明、复制连接信息和查看近期运行记录 |
-| **内网穿透** | 内置 frpc，统一配置一台服务器，多条基础 TCP 隧道转发 MBrain 或手机其他服务 |
+| **Device information** | Read device details, battery, storage, and network status |
+| **App management** | List, inspect, and launch apps; privileged channels can also install, uninstall, and stop apps |
+| **Commands and files** | Run commands through Root or Shizuku and browse, read, write, copy, or move files |
+| **MCP service aggregation** | Add local HTTP MCP services or let MBrain manage stdio MCP processes |
+| **One endpoint** | Expose one searchable tool catalog with connection details and recent run history |
+| **Remote access** | Use the built-in frpc client to forward MBrain or other phone services through TCP tunnels |
 
-- **按需启用**：Root 和 Shizuku 各用一个开关，打开时自动检查并申请权限。
-- **随时停止**：首页右下角一键启停，也可从前台通知停止网关。
-- **服务自由添加**：填写自己的服务名称与配置，不绑定特定第三方应用。
+- **Opt-in capabilities:** Root and Shizuku have separate switches and permission checks.
+- **One-tap control:** Start or stop the gateway from Home or the foreground notification.
+- **Bring your own services:** Add service names and configurations without being tied to a specific third-party app.
 
-## 快速上手
+## Quick start
 
-### 1. 安装 MBrain
+### 1. Install MBrain
 
-需要 **Android 9.0 或更高版本**。
+Requires **Android 9.0 or later**.
 
-从 [GitHub Releases](https://github.com/powercess/mbrain/releases/latest) 下载最新版本的 `mbrain-v版本号-universal.apk`，在 Android 设备上打开并安装。通用安装包覆盖 ARM64、ARM32、x86_64 和 x86，无需挑选架构。
+Download the latest `mbrain-v<version>-universal.apk` from [GitHub Releases](https://github.com/powercess/mbrain/releases/latest) and install it on your Android device. The universal APK supports ARM64, ARM32, x86_64, and x86.
 
-发行页面提供更新说明和 `SHA256SUMS.txt` 校验文件。自行构建及开发测试版说明见[开发指南](docs/development.md)。
+Releases include notes and a `SHA256SUMS.txt` checksum file. See the [development guide](docs/development.md) for local builds and development variants.
 
-### 2. 选择需要开放的能力
+### 2. Choose capabilities
 
-打开底部的 **能力** 页面：
+Open the **Capabilities** tab:
 
-- 设备信息不需要 Root。
-- 按需启用应用管理。
-- 需要高权限操作时，进入 **Root** 或 **Shizuku**，打开启用开关，并完成授权。
+- Device information does not require Root.
+- Enable app management when needed.
+- For privileged operations, enable **Root** or **Shizuku** and complete authorization.
 
-使用 Root 需要设备具备 Root 能力，并允许 **MBrain 本身**获取权限。使用 Shizuku 则需先安装并启动 [Shizuku](https://shizuku.rikka.app/)。两种通道可以分别启用，不需要同时开启。
+Root requires a rooted device and permission granted to **MBrain itself**. Shizuku requires [Shizuku](https://shizuku.rikka.app/) to be installed and running. The two channels can be enabled independently.
 
-### 3. 启动网关
+### 3. Start the gateway
 
-回到 **首页**，点击右下角的启动按钮。显示“运行中”后，打开 **连接地址与凭据**，获取 MCP 地址和 Bearer Token。
+Return to **Home**, tap the start button, then open **Connection details and credentials** to copy the MCP URL and Bearer token.
 
-## 连接 Agent
+## Connect an AI agent
 
-在支持 **HTTP MCP 和 Bearer 认证**的客户端中添加服务：
+Add MBrain to a client that supports **HTTP MCP and Bearer authentication**:
 
-| 配置项 | 填写内容 |
+| Setting | Value |
 | --- | --- |
-| 名称 | `MBrain`，也可自行命名 |
-| MCP 地址 | `http://127.0.0.1:8765/mcp` |
-| 认证方式 | Bearer Token |
-| Token | 从 MBrain 的“连接地址与凭据”页面复制 |
+| Name | `MBrain`, or a name of your choice |
+| MCP URL | `http://127.0.0.1:8765/mcp` |
+| Authentication | Bearer token |
+| Token | Copy from the app's connection credentials page |
 
-如果客户端通过请求头配置认证，填写：
+For clients configured through request headers:
 
 ```http
-Authorization: Bearer <从 MBrain 复制的 Token>
+Authorization: Bearer <your-token>
 ```
 
-**同一台手机上的客户端**可以直接使用上述地址。
-
-**电脑上的客户端**需要先通过 ADB 连接手机，再转发端口：
+**Clients on the same phone** can use the URL directly. **Desktop clients** need an ADB connection and port forwarding:
 
 ```bash
 adb forward tcp:8765 tcp:8765
 ```
 
-默认端口被占用时，网关会自动使用空闲端口。请以“连接地址与凭据”中的实际地址及“使用说明”中的 ADB 命令为准。Token 加密保存在设备上，重启后保持不变；可在凭据页重置。
+If the default port is occupied, MBrain chooses an available port. Use the actual URL and ADB command shown in the app. The token is encrypted on the device, persists across restarts, and can be reset from the credentials page.
 
-**远程客户端**可在“设置 → 内网穿透”配置一台自建 frps，再添加 TCP 隧道。每条隧道独立启停与重试；MCP 隧道跟随网关，自定义服务隧道独立运行。具体见[内网穿透指南](docs/remote-access.md)。
+Try a simple read-only request:
 
-连接后可以先让 Agent 执行一个简单的只读请求：
+> Check this phone's battery level and available storage.
 
-> 查看这台手机的电量和剩余存储空间。
+## Add MCP services
 
-> **权限说明**：当前持有 Token 的客户端可以调用全部已启用工具，尚不支持为不同客户端单独分配权限。Root / Shizuku 工具能够执行实际修改，请只连接可信客户端，不要分享 Token。
+Open **MCP → Add service** and choose a connection type:
 
-## 接入 MCP 服务
-
-需要从公网连接时，可进入 **设置 → 内网穿透 → 配置服务器** 填写 frps 地址、端口和 Token。当前仅支持基础 TCP 转发，所有隧道共用一台服务器。配置示例与运行规则见[内网穿透指南](docs/remote-access.md)。
-
-进入 **MCP → 添加服务**，选择连接方式：
-
-| 方式 | 适用情况 | 需要填写 |
+| Type | Use case | Configuration |
 | --- | --- | --- |
-| **HTTP 服务** | 服务已经由手机上的其他应用或进程启动 | 名称、本机服务地址、可选 Token |
-| **托管进程** | 希望由 MBrain 启动并管理 stdio MCP 服务 | 名称、程序、逐项启动参数、执行身份 |
+| **HTTP service** | Another app or process already runs the service on the phone | Name, local URL, optional token |
+| **Managed process** | MBrain starts and manages a stdio MCP process | Name, executable, individual arguments, execution identity |
 
-保存配置后，在服务详情中点击 **连接服务**。成功连接后，该服务的工具会加入 MBrain 的工具目录，Agent 可以通过同一个入口调用。
+Save the configuration and select **Connect service** in its details. Connected tools join the gateway's catalog and are available through the same MCP endpoint.
 
-HTTP 服务目前只支持回环地址。托管进程所需的程序和运行环境需要事先在设备上准备好，MBrain 不内置 Node.js 或 Python。
+HTTP services currently require loopback addresses. Prepare executables and runtimes on the device before adding managed processes; MBrain does not bundle Node.js or Python.
 
-## 常见问题
+## Remote access
+
+The built-in **frpc** client can forward MBrain or other phone services through a self-hosted **frps** server. Open **Settings → Remote access → Configure server**, enter the server address, port, and token, then add TCP tunnels.
+
+All tunnels share one server configuration. Each tunnel has independent start, stop, and retry controls. MCP tunnels follow the gateway lifecycle; custom service tunnels run independently. Only basic TCP forwarding is supported. See the [remote access guide](docs/remote-access.md) (Simplified Chinese) for configuration and operating rules.
+
+## Permissions and security
+
+- The gateway listens only on the phone's loopback interface. Desktop access uses ADB forwarding; remote access uses configured tunnels.
+- Any client with the Bearer token can call **all enabled tools**. Per-client permissions are not currently supported.
+- Root and Shizuku tools can make real changes to the device. Connect trusted clients and keep the token private.
+- Choose capabilities on the phone and stop the gateway whenever access is no longer needed.
+
+## FAQ
 
 <details>
-<summary><strong>没有 Root，能使用吗？</strong></summary>
+<summary><strong>Can I use MBrain without Root?</strong></summary>
 
-可以。设备信息、普通应用查询与启动、本机 HTTP MCP 接入不依赖 Root。需要更高权限时，可以使用 Shizuku；实际操作范围取决于它的启动方式。
+Yes. Device information, ordinary app queries and launching, and local HTTP MCP services do not require Root. Shizuku provides another channel for privileged operations; its capabilities depend on how it was started.
 
 </details>
 
 <details>
-<summary><strong>为什么客户端连接不上？</strong></summary>
+<summary><strong>Why can't my client connect?</strong></summary>
 
-先确认首页显示“运行中”，并使用凭据页中的 Token。电脑连接时还需确认实际端口的 ADB 转发成功。网关仅监听手机回环地址；远程访问通过已配置的 TCP 隧道连接。
-
-</details>
-
-<details>
-<summary><strong>为什么找不到某个工具？</strong></summary>
-
-工具数量随能力开关、权限状态和外部服务连接情况变化。先在能力页检查开关，再到 MCP 页检查服务状态，最后在客户端重新获取工具列表。
+Check that the gateway is running and the token matches the credentials page. For desktop access, verify ADB forwarding for the actual port. The gateway listens only on loopback; remote connections require a configured TCP tunnel.
 
 </details>
 
 <details>
-<summary><strong>停止服务后会发生什么？</strong></summary>
+<summary><strong>Why is a tool missing?</strong></summary>
 
-网关停止接收请求，断开外部 MCP 连接，并清理直接托管的子进程。应用不会在开机后自动启动网关；运行记录目前仅保留在内存中。
+Available tools depend on capability switches, permissions, and external service connections. Check Capabilities and MCP service status, then refresh the tool list in your client.
 
 </details>
 
-## 反馈与参与
+<details>
+<summary><strong>What happens when I stop the gateway?</strong></summary>
 
-遇到问题或有功能建议，欢迎通过 [Issue 模板](https://github.com/powercess/mbrain/issues/new/choose)反馈。描述问题时请附上版本和复现步骤；截图或日志中请隐去 Token 与私人信息。
+MBrain stops accepting requests, disconnects external MCP services, and cleans up directly managed child processes. It does not automatically start the gateway at boot. Run history is currently kept only in memory.
 
-欢迎通过 Pull Request 改进项目。请从默认分支 `dev` 创建功能分支，再提交 PR 到 `dev`；`dev` 和 `main` 均不接受直接推送。发布时由 `dev` 提交 PR 到 `main`，版本 tag 触发正式发布。构建与测试说明见[开发指南](docs/development.md)。
+</details>
 
-## 致谢
+## Contributing
 
-- [droid-mcp](https://github.com/stixez/droid-mcp)：MBrain 使用的 Android MCP 基座，保留其 [Apache-2.0 许可证](vendor/droid-mcp/LICENSE)和[来源记录](vendor/droid-mcp/UPSTREAM.md)。
-- [Shizuku](https://github.com/RikkaApps/Shizuku) 与 [libsu](https://github.com/topjohnwu/libsu)：Android 高权限能力接入。
-- [RikkaHub](https://github.com/rikkahub/rikkahub)：设置列表与交互设计参考。
+Bug reports, feature suggestions, documentation improvements, and code contributions are welcome. Use the [issue templates](https://github.com/powercess/mbrain/issues/new/choose) and include the app version and reproduction steps. Remove tokens and private information from screenshots and logs.
+
+Read the [contributing guide](CONTRIBUTING.md) for setup, building, validation, and the pull request workflow. Start from the latest `dev` on a dedicated branch and target `dev` in your pull request. The [development guide](docs/development.md) (Simplified Chinese) covers device testing.
+
+## Acknowledgements
+
+- [droid-mcp](https://github.com/stixez/droid-mcp): the Android MCP foundation used by MBrain, with its [Apache-2.0 license](vendor/droid-mcp/LICENSE) and [upstream record](vendor/droid-mcp/UPSTREAM.md) retained.
+- [Shizuku](https://github.com/RikkaApps/Shizuku) and [libsu](https://github.com/topjohnwu/libsu): Android privileged access.
+- [RikkaHub](https://github.com/rikkahub/rikkahub): settings list and interaction design reference.
 
 ## Star History
 
-如果 MBrain 对你有帮助，欢迎点一个 Star。
+If MBrain is useful to you, consider giving it a star.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=powercess/mbrain&amp;type=Date&amp;theme=dark" />
   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=powercess/mbrain&amp;type=Date" />
-  <img alt="MBrain 的 GitHub Star 增长趋势" src="https://api.star-history.com/svg?repos=powercess/mbrain&amp;type=Date" />
+  <img alt="MBrain GitHub star history" src="https://api.star-history.com/svg?repos=powercess/mbrain&amp;type=Date" />
 </picture>
 
-<sub>Star 趋势由 <a href="https://www.star-history.com/#powercess/mbrain&amp;Date">Star History</a> 提供。</sub>
+<sub>Chart provided by <a href="https://www.star-history.com/#powercess/mbrain&amp;Date">Star History</a>.</sub>
