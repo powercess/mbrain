@@ -248,7 +248,14 @@ object GatewayRuntime {
             CapabilityDefinition("net_diagnose", "Diagnose DNS and TCP connectivity", "read", listOf(ProviderKind.APP, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
         )
         val providerObjects = capabilityProviders.mapValues { (kind, tools) ->
-            ToolMapProvider(kind, tools) { if (kind == ProviderKind.APP) ProviderState(ProviderStatus.AVAILABLE) else ProviderState(ProviderStatus.AVAILABLE) }
+            ToolMapProvider(kind, tools) {
+                when (kind) {
+                    ProviderKind.APP -> ProviderState(ProviderStatus.AVAILABLE)
+                    ProviderKind.ROOT -> if (available(ExecutionMode.ROOT)) ProviderState(ProviderStatus.AVAILABLE) else ProviderState(ProviderStatus.DISCONNECTED, "root_not_ready")
+                    ProviderKind.SHIZUKU -> if (available(ExecutionMode.SHIZUKU)) ProviderState(ProviderStatus.AVAILABLE) else ProviderState(ProviderStatus.DISCONNECTED, "shizuku_not_ready")
+                    ProviderKind.SPECIAL_ACCESS -> ProviderState(ProviderStatus.REQUIRES_PERMISSION, "special_access_not_registered")
+                }
+            }
         }
         val registry = CapabilityRegistry(definitions, providerObjects)
         val dispatcher = CapabilityDispatcher(registry)
