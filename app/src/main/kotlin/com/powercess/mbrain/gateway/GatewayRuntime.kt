@@ -210,6 +210,7 @@ object GatewayRuntime {
     }
     private fun localTools(): List<McpTool> = buildList {
         val capabilityProviders = mutableMapOf<ProviderKind, MutableMap<String, McpTool>>()
+        capabilityProviders[ProviderKind.APP] = AppCapabilityTools.all(context).associateBy { it.name }.toMutableMap()
         addAll(DeviceTools.all(context))
         if (config.value.appsEnabled) addAll(AppsTools.all(context))
         listOf(ExecutionMode.ROOT, ExecutionMode.SHIZUKU).forEach { mode ->
@@ -246,7 +247,19 @@ object GatewayRuntime {
             CapabilityDefinition("net_status", "Read network status", "read", listOf(ProviderKind.APP, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
             CapabilityDefinition("net_diagnose", "Diagnose DNS and TCP connectivity", "read", listOf(ProviderKind.APP, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
         )
-        addAll(CapabilityDispatcher(definitions, capabilityProviders).tools())
+        val providerObjects = capabilityProviders.mapValues { (kind, tools) ->
+            ToolMapProvider(kind, tools) { if (kind == ProviderKind.APP) ProviderState(ProviderStatus.AVAILABLE) else ProviderState(ProviderStatus.AVAILABLE) }
+        }
+        val registry = CapabilityRegistry(definitions, providerObjects)
+        val dispatcher = CapabilityDispatcher(registry)
+        addAll(dispatcher.tools())
+        add(object : McpTool {
+            override val name = "capabilities_list"
+            override val description = "List capability contracts and live Provider states."
+            override val annotations = ToolAnnotations(readOnlyHint = true)
+            override val parameters = emptyList<ToolParameter>()
+            override suspend fun execute(params: Map<String, Any>) = ToolResult.success(mapOf("capabilities" to dispatcher.directory()))
+        })
     }
     private fun refreshTools() {
         val current = server ?: return
