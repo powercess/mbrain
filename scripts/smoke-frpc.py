@@ -22,7 +22,7 @@ def free_port():
 
 def run(args):
     root = Path(__file__).resolve().parents[1]
-    if args.package in {"com.powercess.mbrain", "com.powercess.mbrain.debug"}:
+    if args.package in {"com.powercess.mbrain", "com.powercess.mbrain.debug", "com.powercess.mbrain.dev"}:
         raise ValueError("Use an isolated QA package to protect existing application data")
     adb = [args.adb, "-s", args.serial]
     source = root / "build/frpc-source/frp-0.71.0"

@@ -81,7 +81,7 @@ adb devices
 
 Enable USB debugging on a physical device and authorize your computer, or start an emulator first. You can also select `app` and the target device in Android Studio and run it there.
 
-The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`. Its package name is `com.powercess.mbrain.debug`, so it can coexist with the release app. Local development does not require release signing materials. If installation fails because of a signature mismatch, first check the source of the installed test package. Uninstalling it will erase its app data.
+The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`. Its fixed package name is `com.powercess.mbrain.dev`, and its launcher label is `MBrain 开发版`, so it can coexist with the release app. Keep this identity across versions; do not override it with version numbers or temporary task names. Local development does not require release signing materials. Reuse your local debug keystore so updates retain the same signing identity. If installation fails because of a signature mismatch, first check the source of the installed test package. Uninstalling it will erase its app data.
 
 After opening the app, start the gateway from the home screen and open the connection address and credentials section to get the actual address and token. Basic device information does not require Root. Prepare Root or Shizuku and grant MBrain access separately only when testing capabilities that require elevated permissions.
 
