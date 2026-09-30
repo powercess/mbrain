@@ -1,6 +1,21 @@
 # 手机操作与应用诊断
 
-启用 Root 或 Shizuku 后，在工具目录中选择对应来源。下表省略 `root_` / `shizuku_` 前缀，例如完整名称为 `shizuku_ui_dump`。工具不需要单独启用无障碍服务，也不依赖 AutoX.js。
+统一能力工具不要求默认开启 Root 或 Shizuku；调度器会优先选择普通 App Provider，再按声明顺序选择特殊权限、Shizuku 或 Root。原始 `root_` / `shizuku_` 工具仍然保留，例如完整名称为 `shizuku_ui_dump`。工具不需要单独启用无障碍服务，也不依赖 AutoX.js。
+
+## 能力与 Provider
+
+MBrain 将“能力”与“执行通道”分开。MCP 使用稳定的能力名，例如 `clipboard_get`、`ui_dump` 和 `net_status`；每项能力可以有多个 Provider。统一能力支持可选的 `provider` 参数，默认值为 `auto`：
+
+```text
+clipboard_get(provider=auto)
+  → AppProvider（Android ClipboardManager）
+  → ShizukuProvider
+  → RootProvider
+```
+
+也可以明确指定 `provider=app`、`provider=shizuku` 或 `provider=root`。指定 Provider 不可用时返回 `provider_unavailable`，不会悄悄改用其他通道。`shizuku_exec`、`root_exec` 及带前缀的旧工具是原始通道入口，不经过自动调度。
+
+`capabilities_list` 返回能力 ID、风险等级、声明的 Provider 和当前可用 Provider，便于 MCP 客户端在调用前判断条件。当前普通 App Provider 已覆盖剪贴板读写和网络状态；手机控件树、输入注入、日志、AppOps、进程资源和网络诊断仍由 Shizuku/Root Provider 提供。
 
 ## 手机操作
 
@@ -49,6 +64,8 @@ AppOps 默认针对当前 Android 用户；`default` 恢复该项的平台默认
 ## 执行方式
 
 固定 Java 辅助入口打包在 APK 中，经现有高权限执行器启动 `app_process`，只接受上述固定操作和 JSON 参数，不接受任意代码。UI 操作在两个后端之间串行执行；连接时保留已有无障碍服务，完成后断开。沿用现有命令超时、输出上限与能力关闭行为。
+
+Provider 调度只负责选择已注册的同一能力实现，不改变底层执行器的参数校验、超时、审计和能力开关。高权限 Provider 失败不会自动升级到 Root；需要 Root 时必须显式启用并选择 `provider=root`。
 
 ## 验证
 

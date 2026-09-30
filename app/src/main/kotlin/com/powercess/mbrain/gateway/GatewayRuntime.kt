@@ -210,6 +210,7 @@ object GatewayRuntime {
     }
     private fun localTools(): List<McpTool> = buildList {
         val capabilityProviders = mutableMapOf<ProviderKind, MutableMap<String, McpTool>>()
+        capabilityProviders[ProviderKind.APP] = AppCapabilityTools.all(context).associateBy { it.name }.toMutableMap()
         addAll(DeviceTools.all(context))
         if (config.value.appsEnabled) addAll(AppsTools.all(context))
         listOf(ExecutionMode.ROOT, ExecutionMode.SHIZUKU).forEach { mode ->
@@ -247,6 +248,17 @@ object GatewayRuntime {
             CapabilityDefinition("net_diagnose", "Diagnose DNS and TCP connectivity", "read", listOf(ProviderKind.APP, ProviderKind.SHIZUKU, ProviderKind.ROOT)),
         )
         addAll(CapabilityDispatcher(definitions, capabilityProviders).tools())
+        add(object : McpTool {
+            override val name = "capabilities_list"
+            override val description = "List stable MBrain capabilities and their currently available providers."
+            override val annotations = ToolAnnotations(readOnlyHint = true)
+            override val parameters = emptyList<ToolParameter>()
+            override suspend fun execute(params: Map<String, Any>): ToolResult = ToolResult.success(mapOf("capabilities" to definitions.map { definition ->
+                mapOf("id" to definition.id, "risk" to definition.risk,
+                    "providers" to definition.providers.map { it.name.lowercase() },
+                    "available_providers" to definition.providers.filter { capabilityProviders[it]?.containsKey(definition.id) == true }.map { it.name.lowercase() })
+            }))
+        })
     }
     private fun refreshTools() {
         val current = server ?: return
